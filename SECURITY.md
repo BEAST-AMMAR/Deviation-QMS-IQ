@@ -36,3 +36,4 @@ If you discover a security vulnerability or potential data integrity breach, ple
 |:---|:---:|:---|
 | 1.0.x (Current) | ✅ Yes | Active monthly updates |
 | < 1.0.0 | ❌ No | Deprecated |
+

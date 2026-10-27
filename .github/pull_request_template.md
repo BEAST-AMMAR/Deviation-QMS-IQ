@@ -20,3 +20,4 @@
 - [ ] **Read-Only Invariance**: Committed deviations remain immutable at both API and UI levels.
 - [ ] **Test Coverage**: All pytest unit & integration tests pass (27/27).
 - [ ] **Frontend Build**: Vite production build completes cleanly with zero errors.
+

@@ -140,3 +140,50 @@ def test_prompts_contain_anti_injection_defenses():
     assert "data" in EXTRACTION_SYSTEM_PROMPT.lower()
     assert "never as instructions" in EXTRACTION_SYSTEM_PROMPT.lower() or "do not follow" in EXTRACTION_SYSTEM_PROMPT.lower()
     assert "never follow instructions" in PATCH_SYSTEM_PROMPT.lower() or "data" in PATCH_SYSTEM_PROMPT.lower()
+
+
+def test_patch_node_handles_primitive_string_values():
+    """Verify patch_node normalizes simple key-value string maps from LLM output."""
+    mock_llm = MagicMock()
+    mock_llm.invoke.return_value.content = '{"batch_lot": "LOT-PRIMITIVE-888", "title": "Corrected Title"}'
+
+    state = {
+        "raw_input": "Update batch to LOT-PRIMITIVE-888 and title to Corrected Title",
+        "current_fields": {
+            "batch_lot": {"value": "OLD-LOT", "origin": "ai", "confidence": "high"},
+            "title": {"value": "Old Title", "origin": "ai", "confidence": "high"},
+        },
+    }
+
+    with patch("app.graph.nodes._get_llm_large", return_value=mock_llm):
+        result = patch_node(state)
+
+    updated = result["current_fields"]
+    assert updated["batch_lot"]["value"] == "LOT-PRIMITIVE-888"
+    assert updated["batch_lot"]["origin"] == "human"
+    assert updated["title"]["value"] == "Corrected Title"
+    assert "batch_lot" in result["changed_fields"]
+    assert "title" in result["changed_fields"]
+
+
+def test_extractor_node_handles_primitive_string_values():
+    """Verify extractor_node normalizes primitive string fields into ExtractedField dicts."""
+    from app.graph.nodes import extractor_node
+
+    mock_llm = MagicMock()
+    mock_llm.invoke.return_value.content = '{"site_plant": "Goa Facility", "title": "Power Interruption", "batch_lot": "null"}'
+
+    state = {
+        "raw_input": "Power interruption at Goa Facility",
+        "current_fields": {},
+    }
+
+    with patch("app.graph.nodes._get_llm_large", return_value=mock_llm):
+        result = extractor_node(state)
+
+    extracted = result["current_fields"]
+    assert extracted["site_plant"]["value"] == "Goa Facility"
+    assert extracted["site_plant"]["origin"] == "ai"
+    assert extracted["title"]["value"] == "Power Interruption"
+    # null string should not be saved as a real value
+    assert "batch_lot" not in extracted or extracted.get("batch_lot", {}).get("value") is None

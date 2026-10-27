@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ShieldAlert, CheckCircle2 } from 'lucide-react';
 
 /**
@@ -8,7 +8,15 @@ import { ShieldAlert, CheckCircle2 } from 'lucide-react';
 export default function ConfirmationCard({ assessment, onConfirm, isProcessing }) {
   const [severity, setSeverity] = useState(assessment?.suggested_severity || 'Major');
   const [impact, setImpact] = useState(assessment?.suggested_impact || '');
-  const [reasoning] = useState(assessment?.reasoning || '');
+  const [reasoning, setReasoning] = useState(assessment?.reasoning || '');
+
+  useEffect(() => {
+    if (assessment) {
+      setSeverity(assessment.suggested_severity || 'Major');
+      setImpact(assessment.suggested_impact || '');
+      setReasoning(assessment.reasoning || '');
+    }
+  }, [assessment]);
 
   const handleConfirm = () => {
     onConfirm({

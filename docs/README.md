@@ -35,13 +35,9 @@ docs/
 │   ├── 15_Test_Plan.md
 │   ├── 16_QAP_Quality_Assurance_Plan.md
 │   └── 17_Demo_Script_and_Submission_Guide.md
-├── audit/                               # Quality, Usability & Remediation Logs
-│   └── codebase_audit_and_remediation_plan.md
 │
-└── chat_history/                        # Complete Pair-Programming Transcript & History
-    ├── chat_history.md                  # Human-readable markdown session transcript
-    ├── transcript_full.jsonl            # Complete machine-readable event log (367 KB)
-    └── transcript.jsonl                 # Standard JSONL event log (215 KB)
+└── audit/                               # Quality, Usability & Remediation Logs
+    └── codebase_audit_and_remediation_plan.md
 ```
 
 ---
@@ -84,16 +80,6 @@ docs/
 ## 🔍 3. Quality & Remediation Logs
 
 - [codebase_audit_and_remediation_plan.md](audit/codebase_audit_and_remediation_plan.md): Comprehensive architectural, pipeline, and usability audit identifying root causes for the 7 historical workflow friction points (BUG-01 to BUG-07) and documenting all verified fixes.
-
----
-
-## 💬 4. Pair-Programming Chat History & Audit Logs
-
-Complete session transcript and machine-readable execution logs preserved for development traceability:
-
-- 📄 **[chat_history.md](chat_history/chat_history.md)**: Formatted narrative and technical breakdown of the entire conversation.
-- 🗄️ **[transcript_full.jsonl](chat_history/transcript_full.jsonl)**: Complete 367 KB unabridged JSONL system transcript.
-- 🗄️ **[transcript.jsonl](chat_history/transcript.jsonl)**: Standard 215 KB JSONL event log.
 
 ---
 

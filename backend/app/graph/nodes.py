@@ -1,16 +1,16 @@
 """
-DeviationIQ — LangGraph Node Implementations
+DeviationIQ â€” LangGraph Node Implementations
 
 Each node corresponds to a step in the deviation intake state machine.
-See TDD §4 for the full node design table.
+See TDD Â§4 for the full node design table.
 
 Node responsibilities:
-  router       → classify intent (extract / correct / chitchat)
-  extractor    → extract structured fields from raw text
-  risk_assessor → generate severity/impact/reasoning
-  patch_node   → apply natural-language corrections to specific fields
-  responder    → generate human-readable chat reply
-  committer    → (handled at the API layer, not as a graph node here)
+  router       â†’ classify intent (extract / correct / chitchat)
+  extractor    â†’ extract structured fields from raw text
+  risk_assessor â†’ generate severity/impact/reasoning
+  patch_node   â†’ apply natural-language corrections to specific fields
+  responder    â†’ generate human-readable chat reply
+  committer    â†’ (handled at the API layer, not as a graph node here)
 """
 
 from __future__ import annotations
@@ -129,7 +129,7 @@ def _parse_json_response(text: str) -> dict:
 def router_node(state: DraftState) -> dict:
     """
     Classify user intent: extract, correct, or chitchat.
-    Uses the small/fast model — TDD §4 decision for cost/latency.
+    Uses the small/fast model â€” TDD Â§4 decision for cost/latency.
     """
     # Direct routing for document uploads
     if state.get("input_type") == "file":
@@ -178,7 +178,7 @@ def router_node(state: DraftState) -> dict:
 def extractor_node(state: DraftState) -> dict:
     """
     Extract structured deviation fields from raw text.
-    Uses the large model. Returns null for unknown fields — NFR-03.
+    Uses the large model. Returns null for unknown fields â€” NFR-03.
     """
     llm = _get_llm_large()
     raw_input = state.get("raw_input", "")
@@ -214,7 +214,14 @@ def extractor_node(state: DraftState) -> dict:
     changed_fields = []
 
     for field_name, field_data in extracted.items():
-        if isinstance(field_data, dict) and field_data.get("value") is not None:
+        if not isinstance(field_data, dict):
+            field_data = {
+                "value": str(field_data) if field_data is not None else None,
+                "confidence": "high" if field_data else "low",
+                "source_snippet": "Extracted from source text" if field_data else None,
+            }
+        val = field_data.get("value")
+        if val is not None and str(val).strip().lower() not in ("null", "none", ""):
             old_val = current_fields.get(field_name, {}).get("value") if isinstance(current_fields.get(field_name), dict) else None
             field_data["origin"] = "ai"
             current_fields[field_name] = field_data
@@ -334,7 +341,7 @@ def risk_assessor_node(state: DraftState) -> dict:
 def patch_node(state: DraftState) -> dict:
     """
     Apply natural-language corrections to specific fields.
-    Only updates fields mentioned in the correction — TDD §4.
+    Only updates fields mentioned in the correction â€” TDD Â§4.
     """
     llm = _get_llm_large()
     raw_input = state.get("raw_input", "")
@@ -383,9 +390,22 @@ def patch_node(state: DraftState) -> dict:
             "related_product", "batch_lot", "detailed_description",
             "initial_impact", "initial_severity",
         ]:
-            if isinstance(patch_data, dict) and patch_data.get("value") is not None:
-                patch_data["origin"] = "human"
-                updated_fields[field_name] = patch_data
+            if isinstance(patch_data, dict):
+                val = patch_data.get("value")
+                conf = patch_data.get("confidence", "high")
+                src = patch_data.get("source_snippet", "user correction")
+            else:
+                val = str(patch_data)
+                conf = "high"
+                src = "user correction"
+
+            if val is not None and str(val).strip().lower() not in ("null", "none"):
+                updated_fields[field_name] = {
+                    "value": str(val).strip(),
+                    "confidence": conf,
+                    "source_snippet": src,
+                    "origin": "human",
+                }
                 changed_fields.append(field_name)
 
     # Build reply naming exactly which fields changed (FR-12)
@@ -393,7 +413,7 @@ def patch_node(state: DraftState) -> dict:
         field_summaries = []
         for f in changed_fields:
             new_val = updated_fields[f].get("value", "")
-            field_summaries.append(f"  {f.replace('_', ' ')} → \"{new_val}\"")
+            field_summaries.append(f"  {f.replace('_', ' ')} â†’ \"{new_val}\"")
         chat_reply = f"Updated {len(changed_fields)} field(s):\n" + "\n".join(field_summaries)
     else:
         chat_reply = "No fields were changed based on your message."
@@ -417,8 +437,8 @@ def chitchat_node(state: DraftState) -> dict:
     return {
         "chat_reply": (
             "I can help you with:\n\n"
-            "  Extract — Paste incident report text or upload a document and I'll extract structured deviation fields automatically.\n\n"
-            "  Correct — Tell me which field to change and the new value, e.g. 'change the batch number to BT-2025-041'.\n\n"
+            "  Extract â€” Paste incident report text or upload a document and I'll extract structured deviation fields automatically.\n\n"
+            "  Correct â€” Tell me which field to change and the new value, e.g. 'change the batch number to BT-2025-041'.\n\n"
             "Paste or upload an incident report to get started."
         ),
         "changed_fields": [],

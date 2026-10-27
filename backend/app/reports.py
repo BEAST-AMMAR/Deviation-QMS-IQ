@@ -1,5 +1,5 @@
 """
-DeviationIQ — Regulatory Report Generators (PDF & DOCX)
+DeviationIQ â€” Regulatory Report Generators (PDF & DOCX)
 
 Produces publication-grade, GxP-compliant deviation investigation reports
 and 21 CFR Part 11 audit records.
@@ -46,11 +46,19 @@ try:
     windir = os.environ.get("WINDIR", "C:\\Windows")
     arial_path = os.path.join(windir, "Fonts", "arial.ttf")
     arial_bold_path = os.path.join(windir, "Fonts", "arialbd.ttf")
+    liberation_path = "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"
+    liberation_bold_path = "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
+
     if os.path.exists(arial_path) and os.path.exists(arial_bold_path):
         pdfmetrics.registerFont(TTFont("Arial-GxP", arial_path))
         pdfmetrics.registerFont(TTFont("Arial-GxP-Bold", arial_bold_path))
         FONT_NORMAL = "Arial-GxP"
         FONT_BOLD = "Arial-GxP-Bold"
+    elif os.path.exists(liberation_path) and os.path.exists(liberation_bold_path):
+        pdfmetrics.registerFont(TTFont("Liberation-GxP", liberation_path))
+        pdfmetrics.registerFont(TTFont("Liberation-GxP-Bold", liberation_bold_path))
+        FONT_NORMAL = "Liberation-GxP"
+        FONT_BOLD = "Liberation-GxP-Bold"
 except Exception:
     pass
 
@@ -109,7 +117,7 @@ class GxPReportCanvas(canvas.Canvas):
 
         self.setFont(FONT_NORMAL, 7.5)
         self.setFillColor(colors.HexColor("#6B7280"))
-        self.drawString(36, 30, "CONFIDENTIAL — Good Manufacturing Practice (GMP) Record — DeviationIQ QMS")
+        self.drawString(36, 30, "CONFIDENTIAL â€” Good Manufacturing Practice (GMP) Record â€” DeviationIQ QMS")
         page_str = f"Page {self._pageNumber} of {total_pages}"
         self.drawRightString(576, 30, page_str)
 
@@ -123,7 +131,7 @@ class GxPReportCanvas(canvas.Canvas):
 def _sanitize_gxp_text(text: Any) -> str:
     """Thoroughly sanitize text to eliminate unrenderable glyphs, non-breaking hyphens,
 
-    and special Unicode characters that cause black box / tofu (■) artifacts in PDFs and documents.
+    and special Unicode characters that cause black box / tofu (â– ) artifacts in PDFs and documents.
     """
     if text is None:
         return ""
@@ -140,12 +148,12 @@ def _sanitize_gxp_text(text: Any) -> str:
     s = re.sub(r"[\u201c\u201d\u201e\u201f]", '"', s)
 
     # 4. Replace mathematical and comparison symbols
-    s = s.replace("\u2248", "~")      # approximately equal (≈ -> ~)
-    s = s.replace("\u2264", "<=")     # less than or equal (≤ -> <=)
-    s = s.replace("\u2265", ">=")     # greater than or equal (≥ -> >=)
-    s = s.replace("\u00b1", "+/-")    # plus-minus (± -> +/-)
-    s = s.replace("\u00b7", " - ")    # middle dot (· -> -)
-    s = s.replace("\u2026", "...")    # ellipsis (… -> ...)
+    s = s.replace("\u2248", "~")      # approximately equal (â‰ˆ -> ~)
+    s = s.replace("\u2264", "<=")     # less than or equal (â‰¤ -> <=)
+    s = s.replace("\u2265", ">=")     # greater than or equal (â‰¥ -> >=)
+    s = s.replace("\u00b1", "+/-")    # plus-minus (Â± -> +/-)
+    s = s.replace("\u00b7", " - ")    # middle dot (Â· -> -)
+    s = s.replace("\u2026", "...")    # ellipsis (â€¦ -> ...)
 
     # 5. Replace arrows and bullets
     s = re.sub(r"[\u2192\u2794\u21d2]", "->", s)
@@ -162,10 +170,10 @@ def _sanitize_gxp_text(text: Any) -> str:
 def _escape_pdf(text: Any) -> str:
     """Safely escape text for ReportLab Paragraphs, sanitize glyphs, and preserve linebreaks."""
     if text is None:
-        return "—"
+        return "â€”"
     cleaned = _sanitize_gxp_text(text).strip()
     if not cleaned:
-        return "—"
+        return "â€”"
     escaped = html.escape(cleaned)
     return escaped.replace("\r\n", "<br/>").replace("\n", "<br/>")
 
@@ -763,7 +771,7 @@ def generate_deviation_docx(
     if events:
         t_aud = doc.add_table(rows=len(events) + 1, cols=4)
         t_aud.alignment = WD_TABLE_ALIGNMENT.CENTER
-        headers = ["Timestamp (UTC)", "Actor", "Field / Attribute", "Audit Diff (Old → New Value)"]
+        headers = ["Timestamp (UTC)", "Actor", "Field / Attribute", "Audit Diff (Old â†’ New Value)"]
         aud_widths = [Inches(1.3), Inches(0.8), Inches(1.5), Inches(3.9)]
 
         hdr_row = t_aud.rows[0]
@@ -790,7 +798,7 @@ def generate_deviation_docx(
 
             diff = f"New: {nv}"
             if ov:
-                diff = f"Old: {ov}  →  {diff}"
+                diff = f"Old: {ov}  â†’  {diff}"
 
             for c_i, val in enumerate([ts, actor, fld, diff]):
                 cell = row.cells[c_i]

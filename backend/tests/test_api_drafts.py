@@ -422,3 +422,38 @@ async def test_security_headers_middleware(client: AsyncClient):
     assert response.headers.get("x-frame-options") == "DENY"
     assert response.headers.get("x-xss-protection") == "1; mode=block"
     assert "strict-origin" in response.headers.get("referrer-policy", "")
+
+
+@pytest.mark.asyncio
+async def test_get_draft_hydrates_from_db_on_empty_store(client: AsyncClient):
+    """Verify draft state survives server restart or multi-worker state sync (NFR-02)."""
+    from app.routers.drafts import _draft_store
+
+    # 1. Create draft
+    res_create = await client.post("/api/drafts")
+    draft_id = res_create.json()["draft_id"]
+
+    # 2. Patch fields to database
+    await client.patch(
+        f"/api/drafts/{draft_id}/fields",
+        json={
+            "fields": {
+                "site_plant": "Dublin Bio Site",
+                "title": "Sterility Chamber Pressure Drop",
+                "batch_lot": "DUB-BIO-2026",
+            }
+        },
+    )
+
+    # 3. Simulate process restart or alternate worker by clearing in-memory store
+    if draft_id in _draft_store:
+        del _draft_store[draft_id]
+
+    # 4. Fetch draft via GET /api/drafts/{id} — must hydrate from database!
+    res_get = await client.get(f"/api/drafts/{draft_id}")
+    assert res_get.status_code == 200
+    data = res_get.json()
+    assert data["draft_id"] == draft_id
+    assert data["fields"]["site_plant"]["value"] == "Dublin Bio Site"
+    assert data["fields"]["title"]["value"] == "Sterility Chamber Pressure Drop"
+    assert data["fields"]["batch_lot"]["value"] == "DUB-BIO-2026"

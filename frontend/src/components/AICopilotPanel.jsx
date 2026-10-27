@@ -44,8 +44,10 @@ export default function AICopilotPanel({ onOpenHistory }) {
   const handleStartNextDeviation = async () => {
     dispatch(resetDraft());
     dispatch(clearMessages());
+    sessionStorage.removeItem('deviationiq_active_draft_id');
     try {
       const res = await createDraft().unwrap();
+      sessionStorage.setItem('deviationiq_active_draft_id', res.draft_id);
       dispatch(setDraftId(res.draft_id));
       dispatch(addMessage({
         role: 'assistant',

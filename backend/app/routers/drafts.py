@@ -1,15 +1,15 @@
 """
-DeviationIQ — Drafts Router
+DeviationIQ â€” Drafts Router
 
 Handles the draft lifecycle:
-  POST /drafts             → create new draft
-  GET  /drafts/{id}        → fetch current draft state
-  POST /drafts/{id}/message → send text/correction to AI graph
-  POST /drafts/{id}/upload  → upload document for extraction
-  POST /drafts/{id}/confirm → human confirmation of risk assessment
-  POST /drafts/{id}/reset   → discard draft
+  POST /drafts             â†’ create new draft
+  GET  /drafts/{id}        â†’ fetch current draft state
+  POST /drafts/{id}/message â†’ send text/correction to AI graph
+  POST /drafts/{id}/upload  â†’ upload document for extraction
+  POST /drafts/{id}/confirm â†’ human confirmation of risk assessment
+  POST /drafts/{id}/reset   â†’ discard draft
 
-Endpoints match TDD §5 exactly.
+Endpoints match TDD Â§5 exactly.
 """
 
 from __future__ import annotations
@@ -49,7 +49,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/drafts", tags=["drafts"])
 
 # In-memory draft state store (per-session; in production use Redis or DB)
-# Keyed by draft_id → {fields, messages, status, pending_assessment}
+# Keyed by draft_id â†’ {fields, messages, status, pending_assessment}
 _draft_store: dict[str, dict] = {}
 
 
@@ -122,7 +122,54 @@ def _finalize_deviation_session(deviation: Deviation, draft: dict):
     if deviation.ai_reasoning:
         summary_parts.append(f"AI Reasoning: {deviation.ai_reasoning[:120]}...")
     summary_parts.append(f"Signed off by {deviation.reviewed_by or 'Quality Officer'}")
-    deviation.session_summary = " · ".join(summary_parts)
+    deviation.session_summary = " Â· ".join(summary_parts)
+
+
+def _hydrate_draft_from_db(draft: dict, deviation: Deviation):
+    """Hydrate in-memory draft state from a database Deviation record."""
+    if not deviation:
+        return
+    for field_name in [
+        "site_plant", "title", "source", "related_product",
+        "batch_lot", "detailed_description", "initial_impact", "initial_severity",
+    ]:
+        val = getattr(deviation, field_name, None)
+        if val is not None and field_name not in draft["fields"]:
+            draft["fields"][field_name] = {
+                "value": str(val),
+                "confidence": "high",
+                "source_snippet": "Persisted in record",
+                "origin": "human" if deviation.reviewed_by else "ai",
+            }
+
+    if deviation.date_of_occurrence and "date_of_occurrence" not in draft["fields"]:
+        draft["fields"]["date_of_occurrence"] = {
+            "value": str(deviation.date_of_occurrence),
+            "confidence": "high",
+            "source_snippet": "Persisted in record",
+            "origin": "human" if deviation.reviewed_by else "ai",
+        }
+
+    if deviation.filename and not draft.get("filename"):
+        draft["filename"] = deviation.filename
+
+    if deviation.chat_history and (not draft.get("messages") or len(draft["messages"]) <= 1):
+        try:
+            stored_msgs = json.loads(deviation.chat_history)
+            if isinstance(stored_msgs, list) and stored_msgs:
+                draft["messages"] = stored_msgs
+        except Exception:
+            pass
+
+    if deviation.status == "committed":
+        draft["status"] = "committed"
+    elif deviation.ai_suggested_severity and not draft.get("pending_assessment"):
+        draft["pending_assessment"] = {
+            "suggested_severity": deviation.ai_suggested_severity,
+            "suggested_impact": deviation.ai_suggested_action or "",
+            "reasoning": deviation.ai_reasoning or "",
+        }
+        draft["status"] = "awaiting_confirmation"
 
 
 def _get_draft(draft_id: str) -> dict:
@@ -164,7 +211,7 @@ def _fields_to_response(fields: dict) -> DraftFieldsResponse:
 
 
 # ---------------------------------------------------------------------------
-# POST /drafts — Create new draft
+# POST /drafts â€” Create new draft
 # ---------------------------------------------------------------------------
 
 @router.post("", response_model=DraftCreateResponse)
@@ -193,16 +240,29 @@ async def create_draft(db: AsyncSession = Depends(get_db)):
 
 
 # ---------------------------------------------------------------------------
-# GET /drafts/{id} — Fetch current draft state
+# GET /drafts/{id} â€” Fetch current draft state
 # ---------------------------------------------------------------------------
 
 @router.get("/{draft_id}", response_model=DraftResponse)
-async def get_draft(draft_id: str):
-    """Return the current state of a draft."""
+async def get_draft(draft_id: str, db: AsyncSession = Depends(get_db)):
+    """Return the current state of a draft, hydrating from DB if needed."""
     draft = _get_draft(draft_id)
+
+    try:
+        dev_uuid = uuid.UUID(draft_id)
+        stmt = select(Deviation).where(Deviation.id == dev_uuid)
+        result_db = await db.execute(stmt)
+        deviation = result_db.scalar_one_or_none()
+        if deviation:
+            _hydrate_draft_from_db(draft, deviation)
+    except (ValueError, TypeError):
+        pass
+
+    current_status = DeviationStatus.COMMITTED if draft.get("status") == "committed" else DeviationStatus.DRAFT
+
     return DraftResponse(
         draft_id=draft_id,
-        status=DeviationStatus.DRAFT,
+        status=current_status,
         fields=_fields_to_response(draft["fields"]),
         messages=[ChatMessage(**m) if isinstance(m, dict) else m for m in draft["messages"]],
         pending_assessment=draft.get("pending_assessment"),
@@ -210,7 +270,7 @@ async def get_draft(draft_id: str):
 
 
 # ---------------------------------------------------------------------------
-# POST /drafts/{id}/message — Send text or correction
+# POST /drafts/{id}/message â€” Send text or correction
 # ---------------------------------------------------------------------------
 
 @router.post("/{draft_id}/message", response_model=MessageResponse)
@@ -300,23 +360,26 @@ async def send_message(
     except Exception as e:
         logger.warning("AI extraction log failed: %s", e)
 
-    # Update deviation DB record with current field values
-    try:
-        stmt = select(Deviation).where(Deviation.id == uuid.UUID(draft_id))
-        result_db = await db.execute(stmt)
-        deviation = result_db.scalar_one_or_none()
-        if deviation:
-            _apply_fields_to_deviation(deviation, draft["fields"])
-    except Exception as e:
-        logger.warning("DB field update failed for draft %s: %s", draft_id, e)
-
-
     # Add assistant reply to history
     draft["messages"].append({
         "role": "assistant",
         "content": chat_reply,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     })
+
+    # Update deviation DB record with current field values and chat history
+    try:
+        stmt = select(Deviation).where(Deviation.id == uuid.UUID(draft_id))
+        result_db = await db.execute(stmt)
+        deviation = result_db.scalar_one_or_none()
+        if deviation:
+            _apply_fields_to_deviation(deviation, draft["fields"])
+            deviation.chat_history = json.dumps(draft["messages"])
+            if draft.get("filename"):
+                deviation.filename = draft["filename"]
+            await db.flush()
+    except Exception as e:
+        logger.warning("DB field update failed for draft %s: %s", draft_id, e)
 
     return MessageResponse(
         fields=_fields_to_response(draft["fields"]),
@@ -328,7 +391,7 @@ async def send_message(
 
 
 # ---------------------------------------------------------------------------
-# POST /drafts/{id}/upload — Upload document for extraction
+# POST /drafts/{id}/upload â€” Upload document for extraction
 # ---------------------------------------------------------------------------
 
 @router.post("/{draft_id}/upload", response_model=MessageResponse)
@@ -339,7 +402,7 @@ async def upload_document(
 ):
     """
     Upload a PDF/DOCX/TXT file, parse it, and run extraction.
-    Same extractor prompt as text input — single code path (SAD §4).
+    Same extractor prompt as text input â€” single code path (SAD Â§4).
     """
     draft = _get_draft(draft_id)
     draft["filename"] = file.filename or "upload"
@@ -423,21 +486,24 @@ async def upload_document(
         except Exception as e:
             logger.warning("Audit logging failed: %s", e)
 
-    # Update DB record
+    draft["messages"].append({
+        "role": "assistant",
+        "content": chat_reply,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    })
+
+    # Update DB record with fields, filename, and chat history
     try:
         stmt = select(Deviation).where(Deviation.id == uuid.UUID(draft_id))
         result_db = await db.execute(stmt)
         deviation = result_db.scalar_one_or_none()
         if deviation:
             _apply_fields_to_deviation(deviation, draft["fields"])
+            deviation.filename = draft["filename"]
+            deviation.chat_history = json.dumps(draft["messages"])
+            await db.flush()
     except Exception as e:
         logger.warning("DB update failed: %s", e)
-
-    draft["messages"].append({
-        "role": "assistant",
-        "content": chat_reply,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    })
 
     return MessageResponse(
         fields=_fields_to_response(draft["fields"]),
@@ -449,7 +515,7 @@ async def upload_document(
 
 
 # ---------------------------------------------------------------------------
-# POST /drafts/{id}/confirm — Human confirmation of risk assessment
+# POST /drafts/{id}/confirm â€” Human confirmation of risk assessment
 # ---------------------------------------------------------------------------
 
 @router.post("/{draft_id}/confirm", response_model=ConfirmResponse)
@@ -461,7 +527,7 @@ async def confirm_assessment(
     """
     Resume past the human confirmation gate.
     Commits the deviation record with the confirmed/edited assessment.
-    This is the API surface of the LangGraph interrupt() — SAD §4.
+    This is the API surface of the LangGraph interrupt() â€” SAD Â§4.
     """
     draft = _get_draft(draft_id)
 
@@ -488,6 +554,23 @@ async def confirm_assessment(
     deviation.reviewed_by = request.reviewed_by
     deviation.status = "committed"
     deviation.committed_at = datetime.now(timezone.utc)
+
+    # Ensure required date and source are present in draft fields for regulatory compliance
+    if not draft["fields"].get("date_of_occurrence", {}).get("value"):
+        today_iso = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        draft["fields"]["date_of_occurrence"] = {
+            "value": today_iso,
+            "confidence": "high",
+            "source_snippet": "Assigned on confirmation",
+            "origin": "human",
+        }
+    if not draft["fields"].get("source", {}).get("value"):
+        draft["fields"]["source"] = {
+            "value": "Operator Report",
+            "confidence": "high",
+            "source_snippet": "Defaulted on confirmation",
+            "origin": "human",
+        }
 
     # Update all fields from draft (including date_of_occurrence)
     _apply_fields_to_deviation(deviation, draft["fields"])
@@ -530,7 +613,7 @@ async def confirm_assessment(
 
 
 # ---------------------------------------------------------------------------
-# PATCH /drafts/{id}/fields — Direct manual field synchronization
+# PATCH /drafts/{id}/fields â€” Direct manual field synchronization
 # ---------------------------------------------------------------------------
 
 @router.patch("/{draft_id}/fields", response_model=DraftFieldsResponse)
@@ -608,7 +691,7 @@ async def update_draft_fields(
 
 
 # ---------------------------------------------------------------------------
-# POST /drafts/{id}/commit — Direct Form Submission & Commitment
+# POST /drafts/{id}/commit â€” Direct Form Submission & Commitment
 # ---------------------------------------------------------------------------
 
 @router.post("/{draft_id}/commit", response_model=ConfirmResponse)
@@ -716,7 +799,7 @@ async def commit_deviation_direct(
 
 
 # ---------------------------------------------------------------------------
-# POST /drafts/{id}/reset — Discard draft
+# POST /drafts/{id}/reset â€” Discard draft
 # ---------------------------------------------------------------------------
 
 @router.post("/{draft_id}/reset", response_model=ResetResponse)

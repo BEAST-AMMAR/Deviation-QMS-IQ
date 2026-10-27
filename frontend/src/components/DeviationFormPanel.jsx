@@ -59,8 +59,10 @@ export default function DeviationFormPanel({ onShowAudit, onOpenHistory }) {
     setValidationError(null);
     dispatch(resetDraft());
     dispatch(clearMessages());
+    sessionStorage.removeItem('deviationiq_active_draft_id');
     try {
       const res = await createDraft().unwrap();
+      sessionStorage.setItem('deviationiq_active_draft_id', res.draft_id);
       dispatch(setDraftId(res.draft_id));
     } catch (e) {
       console.error('Failed to create new draft:', e);
