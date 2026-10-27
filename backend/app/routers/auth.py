@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.database import get_db
-from app.models import SecurityAuditLog, User, UserRole
+from app.models import ConsentRecord, SecurityAuditLog, User, UserRole
 from app.schemas import CreateUserRequest, LoginRequest, TokenResponse, UserProfileResponse
 from app.services.security import (
     create_access_token,
@@ -201,6 +201,8 @@ async def login(
         role=user.role,
         department=user.department,
         is_active=user.is_active,
+        dpdp_consent_granted=user.dpdp_consent_granted,
+        dpdp_consent_timestamp=user.dpdp_consent_timestamp,
         last_login_at=user.last_login_at,
     )
 
@@ -225,6 +227,8 @@ async def get_me(current_user: User = Depends(get_current_user)):
         role=current_user.role,
         department=current_user.department,
         is_active=current_user.is_active,
+        dpdp_consent_granted=current_user.dpdp_consent_granted,
+        dpdp_consent_timestamp=current_user.dpdp_consent_timestamp,
         last_login_at=current_user.last_login_at,
     )
 
@@ -258,11 +262,18 @@ async def register_user(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Public self-service user registration.
-    Allows new personnel to create an account and immediately receive access.
+    Public self-service user registration with DPDP Act 2023 & IT Act 2000 consent enforcement.
+    Requires affirmative, unbundled consent before account provisioning and logs a tamper-resistant consent ledger.
     """
     client_ip = request.client.host if request.client else "unknown"
-    user_agent = request.headers.get("user-agent", "unknown")
+    user_agent = request.headers.get("user-agent", "unknown")[:250]
+
+    # Statutory Affirmative Consent Verification (DPDP Act 2023 §6 & IT Act 2000 §3A)
+    if not req.terms_accepted or not req.privacy_consent:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Under Section 6 of the Digital Personal Data Protection Act, 2023 (DPDP Act) and the Information Technology Act, 2000, affirmative consent to the Privacy Policy and Terms of Service is mandatory to register an account.",
+        )
 
     clean_username = req.username.strip().lower()
     clean_email = req.email.strip().lower()
@@ -281,6 +292,8 @@ async def register_user(
         )
 
     now = datetime.now(timezone.utc)
+    policy_ver = req.policy_version or "v1.0-2026"
+
     new_user = User(
         username=clean_username,
         email=clean_email,
@@ -289,16 +302,43 @@ async def register_user(
         role=chosen_role,
         department=req.department.strip() if req.department else "API Manufacturing Unit 01",
         is_active=True,
+        dpdp_consent_granted=True,
+        dpdp_consent_timestamp=now,
+        terms_accepted_version=policy_ver,
         last_login_at=now,
     )
     db.add(new_user)
+    await db.flush()
 
-    audit = SecurityAuditLog(
-        event_type="USER_REGISTERED",
-        username=clean_username,
+    # Record tamper-resistant consent ledger entries per DPDP Act 2023 §6
+    consent_terms = ConsentRecord(
+        user_id=new_user.id,
+        consent_type="terms_and_conditions",
+        policy_version=policy_ver,
         ip_address=client_ip,
         user_agent=user_agent,
-        details=f"Self-registered account created with role {chosen_role}.",
+        granted=True,
+        granted_at=now,
+    )
+    consent_privacy = ConsentRecord(
+        user_id=new_user.id,
+        consent_type="privacy_policy_dpdp",
+        policy_version=policy_ver,
+        ip_address=client_ip,
+        user_agent=user_agent,
+        granted=True,
+        granted_at=now,
+    )
+    db.add(consent_terms)
+    db.add(consent_privacy)
+
+    audit = SecurityAuditLog(
+        event_type="USER_REGISTERED_WITH_DPDP_CONSENT",
+        username=clean_username,
+        user_id=new_user.id,
+        ip_address=client_ip,
+        user_agent=user_agent,
+        details=f"Self-registered account created with role {chosen_role}. DPDP Act 2023 §6 consent logged under version {policy_ver}.",
     )
     db.add(audit)
     await db.commit()
@@ -321,6 +361,8 @@ async def register_user(
         role=new_user.role,
         department=new_user.department,
         is_active=new_user.is_active,
+        dpdp_consent_granted=new_user.dpdp_consent_granted,
+        dpdp_consent_timestamp=new_user.dpdp_consent_timestamp,
         last_login_at=new_user.last_login_at,
     )
 

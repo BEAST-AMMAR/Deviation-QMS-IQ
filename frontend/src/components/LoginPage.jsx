@@ -8,6 +8,7 @@ import {
   EyeOff,
   Lock,
   Mail,
+  Scale,
   Shield,
   ShieldCheck,
   User,
@@ -15,6 +16,8 @@ import {
 } from 'lucide-react';
 import { useLoginMutation, useRegisterMutation } from '../store/apiSlice';
 import { setCredentials } from '../store/authSlice';
+import LegalModal from './LegalModal';
+import CookieBanner from './CookieBanner';
 
 export default function LoginPage() {
   const dispatch = useDispatch();
@@ -37,6 +40,12 @@ export default function LoginPage() {
   const [regPassword, setRegPassword] = useState('');
   const [regConfirmPassword, setRegConfirmPassword] = useState('');
   const [showRegPassword, setShowRegPassword] = useState(false);
+  const [regTermsAccepted, setRegTermsAccepted] = useState(false);
+  const [regPrivacyConsent, setRegPrivacyConsent] = useState(false);
+
+  // Legal Modal & Cookie Banner State
+  const [showLegalModal, setShowLegalModal] = useState(false);
+  const [legalTab, setLegalTab] = useState('privacy');
 
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
@@ -87,6 +96,11 @@ export default function LoginPage() {
       return;
     }
 
+    if (!regTermsAccepted || !regPrivacyConsent) {
+      setErrorMsg('Under Section 6 of the DPDP Act 2023 and the IT Act 2000, affirmative consent to both the Terms of Service and Privacy Policy is mandatory.');
+      return;
+    }
+
     try {
       const response = await register({
         username: regUsername.trim(),
@@ -95,6 +109,9 @@ export default function LoginPage() {
         role: regRole,
         department: regDepartment.trim(),
         password: regPassword.trim(),
+        terms_accepted: regTermsAccepted,
+        privacy_consent: regPrivacyConsent,
+        policy_version: 'v1.0-2026',
       }).unwrap();
 
       dispatch(setCredentials(response));
@@ -399,6 +416,93 @@ export default function LoginPage() {
                 </div>
               </div>
 
+              {/* Statutory Compliance & Affirmative Consent (DPDP Act 2023 §6 & IT Act 2000) */}
+              <div
+                style={{
+                  background: 'rgba(15, 23, 42, 0.65)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '8px',
+                  padding: '1rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.75rem',
+                  fontSize: '0.82rem',
+                  color: 'var(--text-secondary)',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.65rem' }}>
+                  <input
+                    id="consent-terms"
+                    type="checkbox"
+                    checked={regTermsAccepted}
+                    onChange={(e) => setRegTermsAccepted(e.target.checked)}
+                    style={{ marginTop: '3px', cursor: 'pointer', accentColor: 'var(--color-primary)' }}
+                    required
+                  />
+                  <label htmlFor="consent-terms" style={{ cursor: 'pointer', lineHeight: 1.45 }}>
+                    I agree to the{' '}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLegalTab('terms');
+                        setShowLegalModal(true);
+                      }}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: 'var(--color-primary)',
+                        textDecoration: 'underline',
+                        padding: 0,
+                        cursor: 'pointer',
+                        fontWeight: 600,
+                        fontFamily: 'inherit',
+                        fontSize: 'inherit',
+                      }}
+                    >
+                      Terms & Conditions
+                    </button>{' '}
+                    governed by the laws of India and Information Technology Act, 2000.
+                  </label>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.65rem' }}>
+                  <input
+                    id="consent-privacy"
+                    type="checkbox"
+                    checked={regPrivacyConsent}
+                    onChange={(e) => setRegPrivacyConsent(e.target.checked)}
+                    style={{ marginTop: '3px', cursor: 'pointer', accentColor: 'var(--color-primary)' }}
+                    required
+                  />
+                  <label htmlFor="consent-privacy" style={{ cursor: 'pointer', lineHeight: 1.45 }}>
+                    I affirmatively consent under Section 6 of the{' '}
+                    <strong>Digital Personal Data Protection Act, 2023 (DPDP Act)</strong> to the collection and
+                    processing of my clinical profile per the{' '}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLegalTab('privacy');
+                        setShowLegalModal(true);
+                      }}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: 'var(--color-primary)',
+                        textDecoration: 'underline',
+                        padding: 0,
+                        cursor: 'pointer',
+                        fontWeight: 600,
+                        fontFamily: 'inherit',
+                        fontSize: 'inherit',
+                      }}
+                    >
+                      Privacy Policy & Notice
+                    </button>
+                    .
+                  </label>
+                </div>
+              </div>
+
               <button
                 type="submit"
                 className="login-submit-btn"
@@ -428,12 +532,99 @@ export default function LoginPage() {
         {/* Security / Compliance Notice Footer */}
         <div className="login-footer-notice">
           <p>
-            This system enforces FDA 21 CFR Part 11 electronic signature integrity.
-            All user registration, session tokens, and deviation sign-offs are cryptographically
-            bound to the verified account ledger.
+            Enforces FDA 21 CFR Part 11 electronic signature integrity, Indian DPDP Act 2023 data fiduciary safeguards,
+            and CERT-In 180-day audit retention.
           </p>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'center',
+              flexWrap: 'wrap',
+              gap: '1rem',
+              marginTop: '0.65rem',
+              fontSize: '0.78rem',
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                setLegalTab('privacy');
+                setShowLegalModal(true);
+              }}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--text-muted)',
+                cursor: 'pointer',
+                textDecoration: 'underline',
+              }}
+            >
+              DPDP Privacy Notice
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setLegalTab('terms');
+                setShowLegalModal(true);
+              }}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--text-muted)',
+                cursor: 'pointer',
+                textDecoration: 'underline',
+              }}
+            >
+              Terms of Service (IT Act)
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setLegalTab('cookies');
+                setShowLegalModal(true);
+              }}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--text-muted)',
+                cursor: 'pointer',
+                textDecoration: 'underline',
+              }}
+            >
+              Cookie Disclosure
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setLegalTab('dpo');
+                setShowLegalModal(true);
+              }}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--text-muted)',
+                cursor: 'pointer',
+                textDecoration: 'underline',
+              }}
+            >
+              DPO Grievance Redressal
+            </button>
+          </div>
         </div>
       </div>
+
+      <CookieBanner
+        onOpenPolicy={(tab) => {
+          setLegalTab(tab);
+          setShowLegalModal(true);
+        }}
+      />
+
+      <LegalModal
+        isOpen={showLegalModal}
+        initialTab={legalTab}
+        onClose={() => setShowLegalModal(false)}
+      />
     </div>
   );
 }

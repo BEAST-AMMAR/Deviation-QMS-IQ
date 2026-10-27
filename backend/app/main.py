@@ -36,7 +36,7 @@ from app.middleware.traffic import (
     TrafficLoggingMiddleware,
 )
 from app.models import Base
-from app.routers import auth, deviations, drafts
+from app.routers import auth, compliance, deviations, drafts
 from app.services.security import seed_default_users
 
 logging.basicConfig(
@@ -166,6 +166,7 @@ async def general_exception_handler(request: Request, exc: Exception):
 
 # --- Register API Routers ---
 app.include_router(auth.router)
+app.include_router(compliance.router)
 app.include_router(drafts.router)
 app.include_router(deviations.router)
 

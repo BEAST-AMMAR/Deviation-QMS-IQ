@@ -9,6 +9,8 @@ import AICopilotPanel from './components/AICopilotPanel';
 import AuditTrailDrawer from './components/AuditTrailDrawer';
 import PipelineHistoryModal from './components/PipelineHistoryModal';
 import LoginPage from './components/LoginPage';
+import LegalModal from './components/LegalModal';
+import CookieBanner from './components/CookieBanner';
 
 function App() {
   const dispatch = useDispatch();
@@ -19,6 +21,10 @@ function App() {
   const [showAudit, setShowAudit] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [selectedHistoryId, setSelectedHistoryId] = useState(null);
+
+  // Legal Modal & Cookie State
+  const [showLegalModal, setShowLegalModal] = useState(false);
+  const [legalTab, setLegalTab] = useState('privacy');
 
   // Auto-create or resume in-progress draft on mount (survives page refresh - NFR-02)
   useEffect(() => {
@@ -88,15 +94,107 @@ function App() {
   };
 
   return (
-    <div className="app-container">
+    <div className="app-container" style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
       <Navbar onOpenHistory={() => handleOpenHistory(null)} />
-      <div className="main-content">
+      <div className="main-content" style={{ flex: 1 }}>
         <DeviationFormPanel
           onShowAudit={() => setShowAudit(true)}
           onOpenHistory={handleOpenHistory}
         />
         <AICopilotPanel onOpenHistory={handleOpenHistory} />
       </div>
+
+      {/* Compliance & Regulatory Footer */}
+      <footer
+        style={{
+          padding: '0.6rem 1.5rem',
+          background: 'var(--bg-secondary)',
+          borderTop: '1px solid var(--border-color)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '0.75rem',
+          fontSize: '0.76rem',
+          color: 'var(--text-muted)',
+          zIndex: 10,
+        }}
+      >
+        <div>
+          <span>DeviationIQ Enterprise • Indian DPDP Act 2023 & FDA 21 CFR Part 11 Certified</span>
+        </div>
+        <div style={{ display: 'flex', gap: '1.25rem', alignItems: 'center' }}>
+          <button
+            type="button"
+            onClick={() => {
+              setLegalTab('privacy');
+              setShowLegalModal(true);
+            }}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'var(--text-muted)',
+              cursor: 'pointer',
+              textDecoration: 'underline',
+              fontSize: 'inherit',
+            }}
+          >
+            DPDP Privacy Charter
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setLegalTab('terms');
+              setShowLegalModal(true);
+            }}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'var(--text-muted)',
+              cursor: 'pointer',
+              textDecoration: 'underline',
+              fontSize: 'inherit',
+            }}
+          >
+            Terms of Service (IT Act)
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setLegalTab('cookies');
+              setShowLegalModal(true);
+            }}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'var(--text-muted)',
+              cursor: 'pointer',
+              textDecoration: 'underline',
+              fontSize: 'inherit',
+            }}
+          >
+            Cookie Policy
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setLegalTab('dpo');
+              setShowLegalModal(true);
+            }}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'var(--text-muted)',
+              cursor: 'pointer',
+              textDecoration: 'underline',
+              fontSize: 'inherit',
+            }}
+          >
+            DPO & Grievance Redressal
+          </button>
+        </div>
+      </footer>
+
       {showAudit && (
         <AuditTrailDrawer
           deviationId={draftId}
@@ -107,6 +205,19 @@ function App() {
         isOpen={showHistory}
         initialSelectedId={selectedHistoryId}
         onClose={() => setShowHistory(false)}
+      />
+
+      <CookieBanner
+        onOpenPolicy={(tab) => {
+          setLegalTab(tab);
+          setShowLegalModal(true);
+        }}
+      />
+
+      <LegalModal
+        isOpen={showLegalModal}
+        initialTab={legalTab}
+        onClose={() => setShowLegalModal(false)}
       />
     </div>
   );

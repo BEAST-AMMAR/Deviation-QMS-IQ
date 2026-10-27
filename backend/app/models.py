@@ -74,11 +74,45 @@ class User(Base):
     locked_until = Column(DateTime(timezone=True), nullable=True)
     last_login_at = Column(DateTime(timezone=True), nullable=True)
 
+    # DPDP Act 2023 & IT Act 2000 Statutory Consent Audit
+    dpdp_consent_granted = Column(Boolean, default=False, nullable=False)
+    dpdp_consent_timestamp = Column(DateTime(timezone=True), nullable=True)
+    terms_accepted_version = Column(String(16), nullable=True, default="v1.0-2026")
+    data_erasure_requested_at = Column(DateTime(timezone=True), nullable=True)
+
     created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
     updated_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow)
 
     # Relationships
     deviations = relationship("Deviation", back_populates="creator", foreign_keys="Deviation.user_id")
+    consent_records = relationship("ConsentRecord", back_populates="user", cascade="all, delete-orphan")
+
+
+class ConsentRecord(Base):
+    """
+    Statutory consent ledger per Section 6 of Digital Personal Data Protection Act, 2023 (DPDP Act).
+    Audit trail for terms acceptance, privacy policy consent, and cookie disclosures.
+    """
+
+    __tablename__ = "consent_records"
+
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=_new_uuid)
+    user_id = Column(Uuid(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
+    consent_type = Column(String(64), nullable=False, index=True)
+    policy_version = Column(String(16), nullable=False, default="v1.0-2026")
+    ip_address = Column(String(64), nullable=True)
+    user_agent = Column(String(256), nullable=True)
+    granted = Column(Boolean, nullable=False, default=True)
+    granted_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    withdrawn_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Relationships
+    user = relationship("User", back_populates="consent_records")
+
+    __table_args__ = (
+        Index("idx_consent_records_user_id", "user_id"),
+        Index("idx_consent_records_type", "consent_type"),
+    )
 
 
 class Deviation(Base):

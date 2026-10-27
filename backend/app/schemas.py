@@ -155,7 +155,6 @@ class DraftFieldUpdateRequest(BaseModel):
 DraftFieldUpdate = DraftFieldUpdateRequest
 
 
-
 class DirectCommitRequest(BaseModel):
     """Direct submission/commitment of deviation form fields."""
     site_plant: Optional[str] = None
@@ -208,15 +207,6 @@ class DeviationRecord(BaseModel):
     updated_at: Optional[datetime] = None
 
 
-class PipelineSessionDetail(BaseModel):
-    """Complete session package for reviewing past completed pipeline executions."""
-    deviation: DeviationRecord
-    messages: list[ChatMessage] = []
-    events: list[DeviationEvent] = []
-    session_summary: Optional[str] = None
-
-
-
 class DeviationEvent(BaseModel):
     id: str
     deviation_id: str
@@ -229,8 +219,16 @@ class DeviationEvent(BaseModel):
     created_at: datetime
 
 
+class PipelineSessionDetail(BaseModel):
+    """Complete session package for reviewing past completed pipeline executions."""
+    deviation: DeviationRecord
+    messages: list[ChatMessage] = []
+    events: list[DeviationEvent] = []
+    session_summary: Optional[str] = None
+
+
 # ---------------------------------------------------------------------------
-# Authentication & User Management (21 CFR Part 11)
+# Authentication & User Management (21 CFR Part 11 & DPDP Act 2023)
 # ---------------------------------------------------------------------------
 
 class LoginRequest(BaseModel):
@@ -246,6 +244,8 @@ class UserProfileResponse(BaseModel):
     role: str
     department: Optional[str] = None
     is_active: bool = True
+    dpdp_consent_granted: bool = False
+    dpdp_consent_timestamp: Optional[datetime] = None
     last_login_at: Optional[datetime] = None
 
 
@@ -263,3 +263,81 @@ class CreateUserRequest(BaseModel):
     full_name: str = Field(..., min_length=2, max_length=128)
     role: Optional[str] = "technician"
     department: Optional[str] = "Quality & Operations"
+
+    # DPDP Act 2023 §6 & IT Act 2000 Affirmative Consent
+    terms_accepted: bool = Field(
+        ...,
+        description="Affirmative acceptance of Terms & Conditions governed by Indian Law & IT Act 2000"
+    )
+    privacy_consent: bool = Field(
+        ...,
+        description="Explicit affirmative consent under Section 6 of Digital Personal Data Protection Act, 2023"
+    )
+    policy_version: Optional[str] = Field("v1.0-2026", description="Policy version acknowledged")
+
+
+# ---------------------------------------------------------------------------
+# Compliance & DPDP Act 2023 Schemas
+# ---------------------------------------------------------------------------
+
+class ConsentType(str, Enum):
+    TERMS_AND_CONDITIONS = "terms_and_conditions"
+    PRIVACY_POLICY_DPDP = "privacy_policy_dpdp"
+    ESSENTIAL_COOKIES = "essential_cookies"
+    DATA_PROCESSING = "data_processing"
+
+
+class ConsentRecordResponse(BaseModel):
+    id: str
+    consent_type: str
+    policy_version: str
+    granted: bool
+    granted_at: datetime
+    withdrawn_at: Optional[datetime] = None
+
+
+class ConsentPayload(BaseModel):
+    consent_type: ConsentType
+    policy_version: Optional[str] = "v1.0-2026"
+    granted: bool = True
+
+
+class ErasureRequestPayload(BaseModel):
+    reason: Optional[str] = "Exercising Right to Erasure under Section 12 of DPDP Act 2023"
+    confirm_understanding: bool = Field(
+        ...,
+        description="Acknowledges that statutory GxP/CDSCO/21 CFR Part 11 audit trails are exempt from deletion but personal account will be deactivated."
+    )
+
+
+class ComplianceSection(BaseModel):
+    heading: str
+    content: str
+
+
+class ComplianceNoticeResponse(BaseModel):
+    title: str
+    version: str
+    effective_date: str
+    governing_law: str
+    sections: list[ComplianceSection]
+
+
+class DPDOfficerResponse(BaseModel):
+    name: str
+    designation: str
+    email: str
+    address: str
+    phone: str
+    statutory_response_days: int = 30
+    cert_in_coordination: str
+
+
+class DataSubjectExportResponse(BaseModel):
+    user_profile: UserProfileResponse
+    dpdp_consent_granted: bool
+    dpdp_consent_timestamp: Optional[datetime]
+    terms_accepted_version: Optional[str]
+    consents: list[ConsentRecordResponse]
+    audit_events_count: int
+    regulatory_notice: str

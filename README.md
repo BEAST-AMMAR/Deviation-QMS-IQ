@@ -5,8 +5,9 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688.svg)](https://fastapi.tiangolo.com/)
 [![LangGraph](https://img.shields.io/badge/LangGraph-0.6+-FF6F00.svg)](https://langchain-ai.github.io/langgraph/)
 [![21 CFR Part 11](https://img.shields.io/badge/Compliance-FDA%2021%20CFR%20Part%2011-success.svg)](https://www.fda.gov/)
+[![DPDP Act 2023](https://img.shields.io/badge/Compliance-India%20DPDP%20Act%202023-blue.svg)](backend/app/routers/compliance.py)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-yellowgreen.svg)](LICENSE)
-[![Tests: 40 Passing](https://img.shields.io/badge/tests-40%20passing-brightgreen.svg)](backend/tests/)
+[![Tests: 43 Passing](https://img.shields.io/badge/tests-43%20passing-brightgreen.svg)](backend/tests/)
 
 An enterprise, pharmaceutical-grade Deviation Intake Module engineered in strict compliance with **FDA 21 CFR Part 11**, **ICH Q9/Q10**, and **GAMP 5** standards. The system accelerates deviation intake and incident triage while enforcing human-in-the-loop oversight, zero-hallucination guardrails, and immutable audit trails.
 
@@ -62,6 +63,13 @@ flowchart TD
 
 6. **Publication-Grade GxP Dossier Exports**:
    - Automated server-side generation of high-precision GxP **PDF** and **DOCX** deviation dossiers complete with running headers, electronic signature blocks, and audit trail diffs.
+
+7. **Indian DPDP Act 2023 & IT Act 2000 Statutory Compliance**:
+   - **Section 5 Statutory Notice**: Clear legal disclosure of data items, processing purposes, and data fiduciary obligations.
+   - **Section 6 Affirmative Consent Ledger**: Unbundled, unchecked consent checkboxes at signup logged into a persistent, tamper-resistant consent table (`consent_records`).
+   - **Sections 11 & 12 Data Subject Rights**: Self-service data export (`/api/compliance/my-data`) and erasure workflows (`/api/compliance/erasure-request`) harmonized with CDSCO/21 CFR Part 11 immutable audit trail retentions.
+   - **Section 13 Grievance Redressal**: Published contact details and 30-day escalation SLA for the Data Protection Officer (DPO).
+   - **Essential Security Cookies**: Strictly essential session tokens; zero third-party commercial trackers or analytics beacons.
 
 ---
 

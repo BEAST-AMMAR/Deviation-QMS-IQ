@@ -137,6 +137,42 @@ export const apiSlice = createApi({
       query: (id) => `/deviations/${id}/session`,
       providesTags: ['Deviation'],
     }),
+    // --- Compliance & DPDP Act 2023 ---
+    getPrivacyPolicy: builder.query({
+      query: () => '/compliance/privacy-policy',
+    }),
+
+    getTermsAndConditions: builder.query({
+      query: () => '/compliance/terms-and-conditions',
+    }),
+
+    getCookiePolicy: builder.query({
+      query: () => '/compliance/cookie-policy',
+    }),
+
+    getDpoContact: builder.query({
+      query: () => '/compliance/dpo-contact',
+    }),
+
+    recordConsent: builder.mutation({
+      query: (body) => ({
+        url: '/compliance/consent',
+        method: 'POST',
+        body,
+      }),
+    }),
+
+    getMyComplianceData: builder.query({
+      query: () => '/compliance/my-data',
+    }),
+
+    requestErasure: builder.mutation({
+      query: (body) => ({
+        url: '/compliance/erasure-request',
+        method: 'POST',
+        body,
+      }),
+    }),
   }),
 });
 
@@ -157,4 +193,11 @@ export const {
   useGetDeviationQuery,
   useGetDeviationEventsQuery,
   useGetSessionDetailQuery,
+  useGetPrivacyPolicyQuery,
+  useGetTermsAndConditionsQuery,
+  useGetCookiePolicyQuery,
+  useGetDpoContactQuery,
+  useRecordConsentMutation,
+  useGetMyComplianceDataQuery,
+  useRequestErasureMutation,
 } = apiSlice;
