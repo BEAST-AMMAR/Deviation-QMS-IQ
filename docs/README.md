@@ -1,7 +1,7 @@
 # AIVOA.AI — DeviationIQ Documentation Suite
 ## Master Documentation Index & Technical Navigation Guide
 
-This directory houses the comprehensive enterprise and regulatory documentation suite for **DeviationIQ** — an AI-Powered Pharmaceutical Deviation Intake Module engineered in strict compliance with **FDA 21 CFR Part 11**, **ICH Q9/Q10**, and **GAMP 5** standards.
+This directory houses the authoritative enterprise and regulatory documentation suite for **DeviationIQ** — an AI-Powered Pharmaceutical Deviation Intake Module engineered in strict compliance with **FDA 21 CFR Part 11**, **ICH Q9/Q10**, and **GAMP 5** standards.
 
 ---
 
@@ -11,33 +11,28 @@ This directory houses the comprehensive enterprise and regulatory documentation 
 docs/
 ├── README.md                            # Master index and navigation guide (this file)
 │
-├── reports/                             # Publication-Grade Reports (PDF & Markdown)
+├── reports/                             # Executive & Publication-Grade Dossiers
 │   ├── DeviationIQ_Technical_Report.pdf # 38-page comprehensive technical project report
-│   ├── DeviationIQ_Technical_Report.md  # Markdown source for technical report
-│   ├── Pipeline_Explainer.pdf           # 9-page two-way engineering & pitch guide
-│   └── Pipeline_Explainer.md            # Markdown source for pipeline explainer
+│   └── Pipeline_Explainer.pdf           # 9-page two-way engineering & pitch guide
 │
-├── architecture/                        # Formal GxP Specifications & Architectural Deliverables
-│   ├── 01_BRD_Business_Requirements.md
-│   ├── 02_PD_Project_Charter.md
-│   ├── 03_PRD_Product_Requirements.md
-│   ├── 04_FRD_Functional_Requirements.md
-│   ├── 05_SRS_Software_Requirements_Specification.md
-│   ├── 06_TRD_Technical_Requirements.md
-│   ├── 07_SAD_System_Architecture.md
-│   ├── 08_TDD_Technical_Design.md
-│   ├── 09_Database_Schema_and_ER.md
-│   ├── 10_UIUX_Wireframes_and_Design.md
-│   ├── 11_User_Stories_and_Use_Cases.md
-│   ├── 12_Roadmap.md
-│   ├── 13_Risk_Management_Log.md
-│   ├── 14_Security_Plan.md
-│   ├── 15_Test_Plan.md
-│   ├── 16_QAP_Quality_Assurance_Plan.md
-│   └── 17_Demo_Script_and_Submission_Guide.md
-│
-└── audit/                               # Quality, Usability & Remediation Logs
-    └── codebase_audit_and_remediation_plan.md
+└── architecture/                        # Formal GxP Specifications & Architectural Deliverables
+    ├── 01_BRD_Business_Requirements.md
+    ├── 02_PD_Project_Charter.md
+    ├── 03_PRD_Product_Requirements.md
+    ├── 04_FRD_Functional_Requirements.md
+    ├── 05_SRS_Software_Requirements_Specification.md
+    ├── 06_TRD_Technical_Requirements.md
+    ├── 07_SAD_System_Architecture.md
+    ├── 08_TDD_Technical_Design.md
+    ├── 09_Database_Schema_and_ER.md
+    ├── 10_UIUX_Wireframes_and_Design.md
+    ├── 11_User_Stories_and_Use_Cases.md
+    ├── 12_Roadmap.md
+    ├── 13_Risk_Management_Log.md
+    ├── 14_Security_Plan.md
+    ├── 15_Test_Plan.md
+    ├── 16_QAP_Quality_Assurance_Plan.md
+    └── 17_Demo_Script_and_Submission_Guide.md
 ```
 
 ---
@@ -47,9 +42,7 @@ docs/
 | Document | Format | Description | Target Audience |
 |:---|:---:|:---|:---|
 | [DeviationIQ_Technical_Report.pdf](reports/DeviationIQ_Technical_Report.pdf) | PDF (38p) | Complete technical project report covering 15 chapters: architecture, state machine, data models, endpoints, security, and verification. | Technical Directors, Auditors, System Architects |
-| [DeviationIQ_Technical_Report.md](reports/DeviationIQ_Technical_Report.md) | Markdown | Raw source manuscript for the comprehensive technical project report. | Developers, Technical Writers |
 | [Pipeline_Explainer.pdf](reports/Pipeline_Explainer.pdf) | PDF (9p) | Two-way architectural breakdown: Section A (Pointwise Technical) and Section B (Conversational Executive Pitch). | Engineering Leads & Product Stakeholders |
-| [Pipeline_Explainer.md](reports/Pipeline_Explainer.md) | Markdown | Raw source manuscript for the two-way pipeline explainer document. | Developers, Sales Engineers |
 
 ---
 
@@ -74,21 +67,3 @@ docs/
 | 15 | [15_Test_Plan.md](architecture/15_Test_Plan.md) | Verification | *Unit, integration, regression, and offline LLM evaluation harness specifications.* |
 | 16 | [16_QAP_Quality_Assurance_Plan.md](architecture/16_QAP_Quality_Assurance_Plan.md) | Quality System | *Code review guidelines, static analysis criteria, and definition of done.* |
 | 17 | [17_Demo_Script_and_Submission_Guide.md](architecture/17_Demo_Script_and_Submission_Guide.md) | Evaluation & Demo | *Video submission walk-through, demo scripts, and assessor presentation outline.* |
-
----
-
-## 🔍 3. Quality & Remediation Logs
-
-- [codebase_audit_and_remediation_plan.md](audit/codebase_audit_and_remediation_plan.md): Comprehensive architectural, pipeline, and usability audit identifying root causes for the 7 historical workflow friction points (BUG-01 to BUG-07) and documenting all verified fixes.
-
----
-
-## 🛠️ Rebuilding the PDF Reports
-
-To recompile the PDF reports from their Markdown source with vector Mermaid diagrams and GxP headers:
-
-```bash
-# Run from repository root:
-python scripts/build_reports.py
-```
-Outputs are automatically written to `docs/reports/`.

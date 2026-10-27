@@ -78,7 +78,6 @@ All system specifications and publication-grade reports are organized under the 
 - ðŸ“Š **[Comprehensive Technical Project Report (PDF)](docs/reports/DeviationIQ_Technical_Report.pdf)**: 38-page publication-grade specification with vector Mermaid architecture diagrams, ER diagrams, data contracts, and verification matrices.
 - ðŸŽ™ï¸ **[Pipeline Explainer Guide (PDF)](docs/reports/Pipeline_Explainer.pdf)**: 9-page two-way guide covering technical pointwise breakdowns and executive conversational pitch scripts.
 - ðŸ›ï¸ **[Architectural & GxP Specification Suite](docs/architecture/)**: Complete 17-document specification package (BRD, PRD, SRS, SAD, Database ER, Security Plan, Test Plan, and QAP).
-- ðŸ” **[Quality Audit & Remediation Log](docs/audit/codebase_audit_and_remediation_plan.md)**: Architectural and usability audit resolving historical workflow friction points (BUG-01 to BUG-07).
 
 ---
 
