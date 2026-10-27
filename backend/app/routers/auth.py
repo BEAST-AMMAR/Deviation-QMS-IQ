@@ -251,44 +251,69 @@ async def logout(
     return {"message": "Session terminated successfully."}
 
 
-@router.post("/register", response_model=UserProfileResponse)
+@router.post("/register", response_model=TokenResponse)
 async def register_user(
     req: CreateUserRequest,
-    current_user: User = Depends(get_current_user),
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Register new clinical personnel. Restricted to Admin & QA officers.
+    Public self-service user registration.
+    Allows new personnel to create an account and immediately receive access.
     """
-    if current_user.role not in [UserRole.ADMIN.value, UserRole.QUALITY_ASSURANCE.value]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only QA Officers or Administrators can provision new clinical accounts.",
-        )
+    client_ip = request.client.host if request.client else "unknown"
+    user_agent = request.headers.get("user-agent", "unknown")
+
+    clean_username = req.username.strip().lower()
+    clean_email = req.email.strip().lower()
+
+    # Validate role against permitted roles
+    valid_roles = [r.value for r in UserRole]
+    chosen_role = req.role if req.role in valid_roles else UserRole.TECHNICIAN.value
 
     # Check collision
-    stmt = select(User).where((User.username == req.username.lower()) | (User.email == req.email.lower()))
+    stmt = select(User).where((User.username == clean_username) | (User.email == clean_email))
     result = await db.execute(stmt)
     if result.scalar_one_or_none():
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Username or email is already registered in the system.",
+            detail="An account with this username or email address is already registered.",
         )
 
+    now = datetime.now(timezone.utc)
     new_user = User(
-        username=req.username.lower(),
-        email=req.email.lower(),
-        full_name=req.full_name,
+        username=clean_username,
+        email=clean_email,
+        full_name=req.full_name.strip(),
         hashed_password=hash_password(req.password),
-        role=req.role or UserRole.TECHNICIAN.value,
-        department=req.department,
+        role=chosen_role,
+        department=req.department.strip() if req.department else "API Manufacturing Unit 01",
         is_active=True,
+        last_login_at=now,
     )
     db.add(new_user)
+
+    audit = SecurityAuditLog(
+        event_type="USER_REGISTERED",
+        username=clean_username,
+        ip_address=client_ip,
+        user_agent=user_agent,
+        details=f"Self-registered account created with role {chosen_role}.",
+    )
+    db.add(audit)
     await db.commit()
     await db.refresh(new_user)
 
-    return UserProfileResponse(
+    token_data = {
+        "sub": str(new_user.id),
+        "username": new_user.username,
+        "role": new_user.role,
+        "full_name": new_user.full_name,
+        "department": new_user.department,
+    }
+    token = create_access_token(token_data)
+
+    user_profile = UserProfileResponse(
         id=str(new_user.id),
         username=new_user.username,
         email=new_user.email,
@@ -296,7 +321,14 @@ async def register_user(
         role=new_user.role,
         department=new_user.department,
         is_active=new_user.is_active,
-        last_login_at=None,
+        last_login_at=new_user.last_login_at,
+    )
+
+    return TokenResponse(
+        access_token=token,
+        token_type="bearer",
+        expires_in=settings.jwt_access_token_expire_minutes * 60,
+        user=user_profile,
     )
 
 

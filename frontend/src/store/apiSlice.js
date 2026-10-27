@@ -28,6 +28,15 @@ export const apiSlice = createApi({
       invalidatesTags: ['User'],
     }),
 
+    register: builder.mutation({
+      query: (newUser) => ({
+        url: '/auth/register',
+        method: 'POST',
+        body: newUser,
+      }),
+      invalidatesTags: ['User'],
+    }),
+
     getMe: builder.query({
       query: () => '/auth/me',
       providesTags: ['User'],
@@ -133,6 +142,7 @@ export const apiSlice = createApi({
 
 export const {
   useLoginMutation,
+  useRegisterMutation,
   useGetMeQuery,
   useLogoutApiMutation,
   useCreateDraftMutation,

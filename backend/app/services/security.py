@@ -111,3 +111,4 @@ async def seed_default_users(session: AsyncSession) -> None:
     except Exception as e:
         await session.rollback()
         logger.warning("Default user seeding notice: %s", e)
+

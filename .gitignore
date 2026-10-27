@@ -11,6 +11,8 @@ frontend/.env.local
 # Databases & Local Persistence
 *.db
 *.db-journal
+*.db-shm
+*.db-wal
 *.sqlite
 *.sqlite3
 pgdata/

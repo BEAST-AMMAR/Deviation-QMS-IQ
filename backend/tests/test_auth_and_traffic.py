@@ -102,3 +102,48 @@ async def test_payload_size_limiter(client: AsyncClient):
     )
     assert res.status_code == 413
     assert res.json()["error"]["code"] == "PAYLOAD_TOO_LARGE"
+
+
+
+@pytest.mark.asyncio
+async def test_self_service_user_registration(client: AsyncClient):
+    """Verify any new clinical personnel can self-register and receive an immediate JWT session."""
+    reg_payload = {
+        "username": "sjenkins",
+        "email": "sarah.jenkins@pharma-iq.internal",
+        "password": "SecurePassword2026!",
+        "full_name": "Dr. Sarah Jenkins",
+        "role": "quality_assurance",
+        "department": "Solid Dosage Facility",
+    }
+    res = await client.post("/api/auth/register", json=reg_payload)
+    assert res.status_code == 200, res.text
+    data = res.json()
+    assert "access_token" in data
+    assert data["token_type"] == "bearer"
+    assert data["user"]["username"] == "sjenkins"
+    assert data["user"]["full_name"] == "Dr. Sarah Jenkins"
+    assert data["user"]["role"] == "quality_assurance"
+
+    # Verify newly registered user can also log in immediately via /login
+    login_res = await client.post(
+        "/api/auth/login",
+        json={"username": "sjenkins", "password": "SecurePassword2026!"},
+    )
+    assert login_res.status_code == 200
+    assert login_res.json()["user"]["username"] == "sjenkins"
+
+
+@pytest.mark.asyncio
+async def test_registration_duplicate_username_conflict(client: AsyncClient):
+    """Verify duplicate username or email registration returns HTTP 409 Conflict."""
+    reg_payload = {
+        "username": "qa_officer",  # already exists from seed
+        "email": "another.email@pharma.com",
+        "password": "Password1234!",
+        "full_name": "Duplicate Operator",
+        "role": "technician",
+    }
+    res = await client.post("/api/auth/register", json=reg_payload)
+    assert res.status_code == 409
+    assert "already registered" in res.json()["detail"]
