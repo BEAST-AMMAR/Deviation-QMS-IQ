@@ -26,7 +26,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.graph.builder import get_compiled_graph
-from app.models import AIExtractionLog, Deviation, DeviationEvent
+from app.models import AIExtractionLog, Deviation, DeviationEvent, User
+from app.routers.auth import get_optional_current_user
 from app.schemas import (
     ConfirmRequest,
     ConfirmResponse,
@@ -523,11 +524,12 @@ async def confirm_assessment(
     draft_id: str,
     request: ConfirmRequest,
     db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_current_user),
 ):
     """
     Resume past the human confirmation gate.
     Commits the deviation record with the confirmed/edited assessment.
-    This is the API surface of the LangGraph interrupt() â€” SAD Â§4.
+    This is the API surface of the LangGraph interrupt() — SAD §4.
     """
     draft = _get_draft(draft_id)
 
@@ -551,7 +553,12 @@ async def confirm_assessment(
     deviation.ai_suggested_severity = pending.get("suggested_severity", "")
     deviation.ai_suggested_action = request.suggested_impact
     deviation.ai_reasoning = request.reasoning
-    deviation.reviewed_by = request.reviewed_by
+    if current_user:
+        deviation.user_id = current_user.id
+        deviation.reviewed_by_user_id = current_user.id
+        deviation.reviewed_by = f"{current_user.full_name} ({current_user.role})"
+    else:
+        deviation.reviewed_by = request.reviewed_by
     deviation.status = "committed"
     deviation.committed_at = datetime.now(timezone.utc)
 
@@ -699,6 +706,7 @@ async def commit_deviation_direct(
     draft_id: str,
     request: DirectCommitRequest,
     db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_current_user),
 ):
     """
     Direct submission and commitment of deviation form.
@@ -765,7 +773,12 @@ async def commit_deviation_direct(
     _finalize_deviation_session(deviation, draft)
 
 
-    deviation.reviewed_by = request.reviewed_by or "Quality Officer"
+    if current_user:
+        deviation.user_id = current_user.id
+        deviation.reviewed_by_user_id = current_user.id
+        deviation.reviewed_by = f"{current_user.full_name} ({current_user.role})"
+    else:
+        deviation.reviewed_by = request.reviewed_by or "Quality Officer"
     deviation.ai_reasoning = request.reasoning or "Direct human review and commitment."
     deviation.status = "committed"
     deviation.committed_at = datetime.now(timezone.utc)

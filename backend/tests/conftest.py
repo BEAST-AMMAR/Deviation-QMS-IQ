@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.database import get_db
 from app.main import app
 from app.models import Base
+from app.services.security import seed_default_users
 
 # In-memory SQLite async engine for tests
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
@@ -42,6 +43,9 @@ async def setup_test_db():
     """Create all tables before test run, drop after."""
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    # Seed default clinical staff into the test database
+    async with TestSessionLocal() as session:
+        await seed_default_users(session)
     yield
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)

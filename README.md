@@ -6,7 +6,7 @@
 [![LangGraph](https://img.shields.io/badge/LangGraph-0.6+-FF6F00.svg)](https://langchain-ai.github.io/langgraph/)
 [![21 CFR Part 11](https://img.shields.io/badge/Compliance-FDA%2021%20CFR%20Part%2011-success.svg)](https://www.fda.gov/)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-yellowgreen.svg)](LICENSE)
-[![Tests: 30 Passing](https://img.shields.io/badge/tests-30%20passing-brightgreen.svg)](backend/tests/)
+[![Tests: 38 Passing](https://img.shields.io/badge/tests-38%20passing-brightgreen.svg)](backend/tests/)
 
 An enterprise, pharmaceutical-grade Deviation Intake Module engineered in strict compliance with **FDA 21 CFR Part 11**, **ICH Q9/Q10**, and **GAMP 5** standards. The system accelerates deviation intake and incident triage while enforcing human-in-the-loop oversight, zero-hallucination guardrails, and immutable audit trails.
 
@@ -156,7 +156,7 @@ npm run build
 
 ## 🧪 Testing & Quality Assurance
 
-### Run Backend Unit & Integration Tests (30 passing tests)
+### Run Backend Unit & Integration Tests (38 passing tests)
 
 ```bash
 cd backend

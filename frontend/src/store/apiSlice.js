@@ -4,22 +4,53 @@ const API_BASE = '/api';
 
 export const apiSlice = createApi({
   reducerPath: 'api',
-  baseQuery: fetchBaseQuery({ baseUrl: API_BASE }),
-  tagTypes: ['Draft', 'Deviation'],
+  baseQuery: fetchBaseQuery({
+    baseUrl: API_BASE,
+    prepareHeaders: (headers, { getState }) => {
+      const state = getState();
+      const token = state.auth?.token || localStorage.getItem('deviationiq_token');
+      if (token) {
+        headers.set('authorization', `Bearer ${token}`);
+      }
+      return headers;
+    },
+  }),
+  tagTypes: ['Draft', 'Deviation', 'User'],
   endpoints: (builder) => ({
 
-    // POST /drafts — create new draft
+    // --- Authentication ---
+    login: builder.mutation({
+      query: (credentials) => ({
+        url: '/auth/login',
+        method: 'POST',
+        body: credentials,
+      }),
+      invalidatesTags: ['User'],
+    }),
+
+    getMe: builder.query({
+      query: () => '/auth/me',
+      providesTags: ['User'],
+    }),
+
+    logoutApi: builder.mutation({
+      query: () => ({
+        url: '/auth/logout',
+        method: 'POST',
+      }),
+      invalidatesTags: ['User'],
+    }),
+
+    // --- Drafts & AI Pipeline ---
     createDraft: builder.mutation({
       query: () => ({ url: '/drafts', method: 'POST' }),
     }),
 
-    // GET /drafts/{id}
     getDraft: builder.query({
       query: (draftId) => `/drafts/${draftId}`,
       providesTags: ['Draft'],
     }),
 
-    // POST /drafts/{id}/message
     sendMessage: builder.mutation({
       query: ({ draftId, text }) => ({
         url: `/drafts/${draftId}/message`,
@@ -29,7 +60,6 @@ export const apiSlice = createApi({
       invalidatesTags: ['Draft'],
     }),
 
-    // POST /drafts/{id}/upload
     uploadFile: builder.mutation({
       query: ({ draftId, file }) => {
         const formData = new FormData();
@@ -43,7 +73,6 @@ export const apiSlice = createApi({
       invalidatesTags: ['Draft'],
     }),
 
-    // POST /drafts/{id}/confirm
     confirmAssessment: builder.mutation({
       query: ({ draftId, assessment }) => ({
         url: `/drafts/${draftId}/confirm`,
@@ -53,7 +82,6 @@ export const apiSlice = createApi({
       invalidatesTags: ['Draft', 'Deviation'],
     }),
 
-    // PATCH /drafts/{id}/fields
     updateDraftFields: builder.mutation({
       query: ({ draftId, fieldName, value, fields }) => ({
         url: `/drafts/${draftId}/fields`,
@@ -63,7 +91,6 @@ export const apiSlice = createApi({
       invalidatesTags: ['Draft'],
     }),
 
-    // POST /drafts/{id}/commit
     commitDirect: builder.mutation({
       query: ({ draftId, ...payload }) => ({
         url: `/drafts/${draftId}/commit`,
@@ -73,7 +100,6 @@ export const apiSlice = createApi({
       invalidatesTags: ['Draft', 'Deviation'],
     }),
 
-    // POST /drafts/{id}/reset
     resetDraft: builder.mutation({
       query: (draftId) => ({
         url: `/drafts/${draftId}/reset`,
@@ -82,25 +108,22 @@ export const apiSlice = createApi({
       invalidatesTags: ['Draft'],
     }),
 
-    // GET /deviations
+    // --- Deviations ---
     listDeviations: builder.query({
       query: () => '/deviations',
       providesTags: ['Deviation'],
     }),
 
-    // GET /deviations/{id}
     getDeviation: builder.query({
       query: (id) => `/deviations/${id}`,
       providesTags: ['Deviation'],
     }),
 
-    // GET /deviations/{id}/events
     getDeviationEvents: builder.query({
       query: (id) => `/deviations/${id}/events`,
       providesTags: ['Deviation'],
     }),
 
-    // GET /deviations/{id}/session — Complete chat transcript, report outcomes, and audit trail
     getSessionDetail: builder.query({
       query: (id) => `/deviations/${id}/session`,
       providesTags: ['Deviation'],
@@ -109,6 +132,9 @@ export const apiSlice = createApi({
 });
 
 export const {
+  useLoginMutation,
+  useGetMeQuery,
+  useLogoutApiMutation,
   useCreateDraftMutation,
   useGetDraftQuery,
   useSendMessageMutation,
@@ -122,4 +148,3 @@ export const {
   useGetDeviationEventsQuery,
   useGetSessionDetailQuery,
 } = apiSlice;
-

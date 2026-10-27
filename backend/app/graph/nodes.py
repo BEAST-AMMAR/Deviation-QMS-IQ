@@ -35,6 +35,7 @@ from app.graph.prompts import (
     ROUTER_USER_PROMPT,
 )
 from app.graph.state import DraftState
+from app.middleware.traffic import llm_concurrency_gate
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -153,7 +154,8 @@ def router_node(state: DraftState) -> dict:
     ]
 
     try:
-        response = llm.invoke(messages)
+        with llm_concurrency_gate:
+            response = llm.invoke(messages)
         decision = response.content.strip().lower()
         # Normalize to one of three valid values
         if "extract" in decision:
@@ -194,7 +196,8 @@ def extractor_node(state: DraftState) -> dict:
     ]
 
     try:
-        response = llm.invoke(messages)
+        with llm_concurrency_gate:
+            response = llm.invoke(messages)
         extracted = _parse_json_response(response.content)
     except Exception as e:
         logger.error("Extractor node failed: %s", e)
@@ -300,7 +303,8 @@ def risk_assessor_node(state: DraftState) -> dict:
     ]
 
     try:
-        response = llm.invoke(messages)
+        with llm_concurrency_gate:
+            response = llm.invoke(messages)
         assessment = _parse_json_response(response.content)
     except Exception as e:
         logger.error("Risk assessor node failed: %s", e)
@@ -364,7 +368,8 @@ def patch_node(state: DraftState) -> dict:
     ]
 
     try:
-        response = llm.invoke(messages)
+        with llm_concurrency_gate:
+            response = llm.invoke(messages)
         patches = _parse_json_response(response.content)
     except Exception as e:
         logger.error("Patch node failed: %s", e)

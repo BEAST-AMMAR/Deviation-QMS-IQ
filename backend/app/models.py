@@ -1,22 +1,25 @@
 """
 DeviationIQ — SQLAlchemy ORM Models
 
-Table shapes match 09_Database_Schema_and_ER.md exactly.
-Column names are the single source of truth referenced by all layers.
+Table shapes match 09_Database_Schema_and_ER.md and 21 CFR Part 11 requirements.
+Includes User, Deviation, DeviationEvent (ALCOA+ audit ledger), and SecurityAuditLog.
 """
 
 from __future__ import annotations
 
+import enum
 import uuid
 from datetime import date, datetime, timezone
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     Column,
     Date,
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     String,
     Text,
     Uuid,
@@ -37,6 +40,47 @@ def _new_uuid() -> uuid.UUID:
     return uuid.uuid4()
 
 
+class UserRole(str, enum.Enum):
+    ADMIN = "admin"
+    QUALITY_ASSURANCE = "quality_assurance"
+    TECHNICIAN = "technician"
+    VIEWER = "viewer"
+
+
+class User(Base):
+    """
+    Authenticated pharmaceutical personnel subject to 21 CFR Part 11 electronic signature controls.
+    """
+
+    __tablename__ = "users"
+
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=_new_uuid)
+    username = Column(String(64), unique=True, nullable=False, index=True)
+    email = Column(String(128), unique=True, nullable=False, index=True)
+    full_name = Column(String(128), nullable=False)
+    hashed_password = Column(String(256), nullable=False)
+    role = Column(
+        String(32),
+        CheckConstraint(
+            "role IN ('admin','quality_assurance','technician','viewer')",
+            name="ck_user_role",
+        ),
+        nullable=False,
+        default="technician",
+    )
+    department = Column(String(64), nullable=True, default="Quality & Compliance")
+    is_active = Column(Boolean, default=True, nullable=False)
+    failed_login_attempts = Column(Integer, default=0, nullable=False)
+    locked_until = Column(DateTime(timezone=True), nullable=True)
+    last_login_at = Column(DateTime(timezone=True), nullable=True)
+
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow)
+
+    # Relationships
+    deviations = relationship("Deviation", back_populates="creator", foreign_keys="Deviation.user_id")
+
+
 class Deviation(Base):
     """
     Primary deviation record — holds current state only.
@@ -52,6 +96,10 @@ class Deviation(Base):
         nullable=False,
         default="draft",
     )
+
+    # --- Attribution & Ownership (21 CFR Part 11) ---
+    user_id = Column(Uuid(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    reviewed_by_user_id = Column(Uuid(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     # --- Deviation Information (FRD §3) ---
     site_plant = Column(Text, nullable=True)
@@ -84,8 +132,8 @@ class Deviation(Base):
     created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
     updated_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow)
 
-
     # --- Relationships ---
+    creator = relationship("User", foreign_keys=[user_id], back_populates="deviations")
     events = relationship("DeviationEvent", back_populates="deviation", cascade="all, delete-orphan")
     extraction_logs = relationship("AIExtractionLog", back_populates="deviation", cascade="all, delete-orphan")
 
@@ -104,6 +152,7 @@ class DeviationEvent(Base):
         ForeignKey("deviations.id", ondelete="CASCADE"),
         nullable=False,
     )
+    user_id = Column(Uuid(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     actor = Column(
         String,
         CheckConstraint("actor IN ('ai','human')", name="ck_event_actor"),
@@ -121,6 +170,29 @@ class DeviationEvent(Base):
 
     __table_args__ = (
         Index("idx_deviation_events_deviation_id", "deviation_id"),
+    )
+
+
+class SecurityAuditLog(Base):
+    """
+    Server security & access audit trail per 21 CFR Part 11 §11.10(e).
+    Records authentication events, account lockouts, rate limit violations, and security changes.
+    """
+
+    __tablename__ = "security_audit_logs"
+
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=_new_uuid)
+    event_type = Column(String(64), nullable=False, index=True)
+    username = Column(String(64), nullable=True, index=True)
+    user_id = Column(Uuid(as_uuid=True), nullable=True)
+    ip_address = Column(String(64), nullable=True)
+    user_agent = Column(String(256), nullable=True)
+    details = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+
+    __table_args__ = (
+        Index("idx_security_audit_event_type", "event_type"),
+        Index("idx_security_audit_created_at", "created_at"),
     )
 
 

@@ -41,6 +41,18 @@ class Settings(BaseSettings):
     postgres_host: str = "localhost"
     postgres_port: int = 5432
 
+    # --- Security & JWT (21 CFR Part 11) ---
+    jwt_secret: str = "deviationiq-enterprise-secure-jwt-secret-key-2026-xyz"
+    jwt_algorithm: str = "HS256"
+    jwt_access_token_expire_minutes: int = 480  # 8-hour clinical shift duration
+
+    # --- Traffic & Overload Protection ---
+    rate_limit_per_minute: int = 200            # General endpoints
+    rate_limit_auth_per_minute: int = 15        # Brute-force protection
+    rate_limit_ai_per_minute: int = 40          # AI triage burst gate
+    max_request_body_bytes: int = 26214400      # 25 MB max payload ceiling
+    llm_concurrency_limit: int = 5              # Max concurrent Groq LLM invocations
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
 

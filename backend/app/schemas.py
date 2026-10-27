@@ -227,3 +227,39 @@ class DeviationEvent(BaseModel):
     confidence: Optional[str] = None
     source_snippet: Optional[str] = None
     created_at: datetime
+
+
+# ---------------------------------------------------------------------------
+# Authentication & User Management (21 CFR Part 11)
+# ---------------------------------------------------------------------------
+
+class LoginRequest(BaseModel):
+    username: str = Field(..., min_length=2, max_length=64)
+    password: str = Field(..., min_length=4)
+
+
+class UserProfileResponse(BaseModel):
+    id: str
+    username: str
+    email: str
+    full_name: str
+    role: str
+    department: Optional[str] = None
+    is_active: bool = True
+    last_login_at: Optional[datetime] = None
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int
+    user: UserProfileResponse
+
+
+class CreateUserRequest(BaseModel):
+    username: str = Field(..., min_length=3, max_length=64)
+    email: str = Field(..., min_length=5, max_length=128)
+    password: str = Field(..., min_length=6)
+    full_name: str = Field(..., min_length=2, max_length=128)
+    role: Optional[str] = "technician"
+    department: Optional[str] = "Quality & Operations"

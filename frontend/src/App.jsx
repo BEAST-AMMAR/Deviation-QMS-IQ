@@ -8,9 +8,12 @@ import DeviationFormPanel from './components/DeviationFormPanel';
 import AICopilotPanel from './components/AICopilotPanel';
 import AuditTrailDrawer from './components/AuditTrailDrawer';
 import PipelineHistoryModal from './components/PipelineHistoryModal';
+import LoginPage from './components/LoginPage';
 
 function App() {
   const dispatch = useDispatch();
+  const isAuthenticated = useSelector((state) => state.auth.isAuthenticated);
+  const token = useSelector((state) => state.auth.token);
   const draftId = useSelector((state) => state.draft.draftId);
   const [createDraft] = useCreateDraftMutation();
   const [showAudit, setShowAudit] = useState(false);
@@ -19,10 +22,14 @@ function App() {
 
   // Auto-create or resume in-progress draft on mount (survives page refresh - NFR-02)
   useEffect(() => {
+    if (!isAuthenticated) return;
+
     if (!draftId) {
       const savedId = sessionStorage.getItem('deviationiq_active_draft_id');
+      const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+
       if (savedId) {
-        fetch(`/api/drafts/${savedId}`)
+        fetch(`/api/drafts/${savedId}`, { headers: authHeaders })
           .then((res) => {
             if (res.ok) return res.json();
             throw new Error('Draft not found');
@@ -68,7 +75,12 @@ function App() {
           });
       }
     }
-  }, [draftId, createDraft, dispatch]);
+  }, [isAuthenticated, draftId, createDraft, dispatch, token]);
+
+  // If not authenticated, present the secure 21 CFR Part 11 Login Screen
+  if (!isAuthenticated) {
+    return <LoginPage />;
+  }
 
   const handleOpenHistory = (id) => {
     setSelectedHistoryId(id || null);
