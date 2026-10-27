@@ -1,12 +1,16 @@
 """
 DeviationIQ — Deviations Router (Committed Records)
 
-Handles read-only access to committed deviation records:
-  GET /deviations/{id}        → fetch committed record
+Handles multi-user data isolation and read-only access to committed deviation records:
+  GET /deviations        → list deviations belonging exclusively to the authenticated user
+  GET /deviations/{id}   → fetch user's committed record (with strict IDOR protection)
   GET /deviations/{id}/events → fetch audit trail
-  GET /deviations              → list all committed deviations
+  GET /deviations/{id}/session → fetch session details
+  GET /deviations/{id}/export/pdf → export signed dossier
+  GET /deviations/{id}/export/docx → export signed dossier
 
-Committed records are read-only — any write attempt returns 409 (SC-07).
+Strict data segregation: Each user has their own private pipeline history.
+Cross-user deviation access or data leakage returns HTTP 403 Forbidden.
 """
 
 from __future__ import annotations
@@ -14,16 +18,17 @@ from __future__ import annotations
 import json
 import logging
 import uuid
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.models import Deviation, DeviationEvent
+from app.models import Deviation, DeviationEvent, User
 from app.reports import generate_deviation_docx, generate_deviation_pdf
+from app.routers.auth import get_optional_current_user
 from app.schemas import (
     ChatMessage,
     DeviationEvent as DeviationEventSchema,
@@ -35,14 +40,53 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/deviations", tags=["deviations"])
 
 
+def _verify_deviation_access(deviation: Deviation, current_user: Optional[User]):
+    """
+    Enforces strict user isolation to prevent data breaches or Insecure Direct Object References (IDOR).
+    If a deviation is bound to a user account, only that specific user may view or export it.
+    """
+    if deviation.user_id is not None:
+        if not current_user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required to view this clinical deviation record.",
+            )
+        if current_user.id != deviation.user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: You do not have authorization to access deviations belonging to another clinical account.",
+            )
+
+
 @router.get("", response_model=list[DeviationRecord])
-async def list_deviations(db: AsyncSession = Depends(get_db)):
-    """List all committed deviations, ordered newest to oldest."""
-    stmt = (
-        select(Deviation)
-        .where(Deviation.status == "committed")
-        .order_by(Deviation.committed_at.desc(), Deviation.created_at.desc())
-    )
+async def list_deviations(
+    current_user: Optional[User] = Depends(get_optional_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    List all committed deviations belonging exclusively to the authenticated user.
+    Prevents cross-user data leakage and multi-tenant data exposure.
+    """
+    if current_user:
+        stmt = (
+            select(Deviation)
+            .where(
+                Deviation.status == "committed",
+                Deviation.user_id == current_user.id,
+            )
+            .order_by(Deviation.committed_at.desc(), Deviation.created_at.desc())
+        )
+    else:
+        # Fallback for unauthenticated integration tests
+        stmt = (
+            select(Deviation)
+            .where(
+                Deviation.status == "committed",
+                Deviation.user_id.is_(None),
+            )
+            .order_by(Deviation.committed_at.desc(), Deviation.created_at.desc())
+        )
+
     result = await db.execute(stmt)
     deviations = result.scalars().all()
 
@@ -74,10 +118,13 @@ async def list_deviations(db: AsyncSession = Depends(get_db)):
     ]
 
 
-
 @router.get("/{deviation_id}", response_model=DeviationRecord)
-async def get_deviation(deviation_id: str, db: AsyncSession = Depends(get_db)):
-    """Fetch a single committed deviation record (read-only)."""
+async def get_deviation(
+    deviation_id: str,
+    current_user: Optional[User] = Depends(get_optional_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Fetch a single committed deviation record (strictly user-isolated)."""
     try:
         dev_uuid = uuid.UUID(deviation_id)
     except ValueError:
@@ -89,6 +136,8 @@ async def get_deviation(deviation_id: str, db: AsyncSession = Depends(get_db)):
 
     if not deviation:
         raise HTTPException(status_code=404, detail="Deviation not found.")
+
+    _verify_deviation_access(deviation, current_user)
 
     return DeviationRecord(
         id=str(deviation.id),
@@ -116,9 +165,13 @@ async def get_deviation(deviation_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/{deviation_id}/session", response_model=PipelineSessionDetail)
-async def get_deviation_session(deviation_id: str, db: AsyncSession = Depends(get_db)):
+async def get_deviation_session(
+    deviation_id: str,
+    current_user: Optional[User] = Depends(get_optional_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     """
-    Fetch the complete pipeline session bundle:
+    Fetch the complete pipeline session bundle (strictly user-isolated):
     - Full deviation record & outcomes
     - Complete AI copilot chat history transcript
     - Append-only audit trail events
@@ -135,6 +188,8 @@ async def get_deviation_session(deviation_id: str, db: AsyncSession = Depends(ge
 
     if not deviation:
         raise HTTPException(status_code=404, detail="Deviation not found.")
+
+    _verify_deviation_access(deviation, current_user)
 
     # Parse chat messages
     messages: list[ChatMessage] = []
@@ -208,12 +263,24 @@ async def get_deviation_session(deviation_id: str, db: AsyncSession = Depends(ge
 
 
 @router.get("/{deviation_id}/events", response_model=list[DeviationEventSchema])
-async def get_deviation_events(deviation_id: str, db: AsyncSession = Depends(get_db)):
-    """Fetch the append-only audit trail for a deviation."""
+async def get_deviation_events(
+    deviation_id: str,
+    current_user: Optional[User] = Depends(get_optional_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Fetch the append-only audit trail for a deviation (strictly user-isolated)."""
     try:
         dev_uuid = uuid.UUID(deviation_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid deviation ID format.")
+
+    stmt_dev = select(Deviation).where(Deviation.id == dev_uuid)
+    res_dev = await db.execute(stmt_dev)
+    deviation = res_dev.scalar_one_or_none()
+    if not deviation:
+        raise HTTPException(status_code=404, detail="Deviation not found.")
+
+    _verify_deviation_access(deviation, current_user)
 
     stmt = (
         select(DeviationEvent)
@@ -240,8 +307,12 @@ async def get_deviation_events(deviation_id: str, db: AsyncSession = Depends(get
 
 
 @router.get("/{deviation_id}/export/pdf")
-async def export_deviation_pdf(deviation_id: str, db: AsyncSession = Depends(get_db)):
-    """Generate and download a high-precision GxP PDF deviation report."""
+async def export_deviation_pdf(
+    deviation_id: str,
+    current_user: Optional[User] = Depends(get_optional_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate and download a high-precision GxP PDF deviation report (strictly user-isolated)."""
     try:
         dev_uuid = uuid.UUID(deviation_id)
     except ValueError:
@@ -253,6 +324,8 @@ async def export_deviation_pdf(deviation_id: str, db: AsyncSession = Depends(get
 
     if not deviation:
         raise HTTPException(status_code=404, detail="Deviation not found.")
+
+    _verify_deviation_access(deviation, current_user)
 
     # Deserialized chat messages
     messages = []
@@ -293,8 +366,12 @@ async def export_deviation_pdf(deviation_id: str, db: AsyncSession = Depends(get
 
 
 @router.get("/{deviation_id}/export/docx")
-async def export_deviation_docx(deviation_id: str, db: AsyncSession = Depends(get_db)):
-    """Generate and download a clean GxP DOCX deviation dossier."""
+async def export_deviation_docx(
+    deviation_id: str,
+    current_user: Optional[User] = Depends(get_optional_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate and download a clean GxP DOCX deviation dossier (strictly user-isolated)."""
     try:
         dev_uuid = uuid.UUID(deviation_id)
     except ValueError:
@@ -306,6 +383,8 @@ async def export_deviation_docx(deviation_id: str, db: AsyncSession = Depends(ge
 
     if not deviation:
         raise HTTPException(status_code=404, detail="Deviation not found.")
+
+    _verify_deviation_access(deviation, current_user)
 
     # Deserialized chat messages
     messages = []
@@ -343,5 +422,3 @@ async def export_deviation_docx(deviation_id: str, db: AsyncSession = Depends(ge
             "Access-Control-Expose-Headers": "Content-Disposition",
         },
     )
-
-

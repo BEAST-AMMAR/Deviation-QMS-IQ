@@ -1,5 +1,5 @@
 """
-DeviationIQ â€” Regulatory Report Generators (PDF & DOCX)
+DeviationIQ  -  Regulatory Report Generators (PDF & DOCX)
 
 Produces publication-grade, GxP-compliant deviation investigation reports
 and 21 CFR Part 11 audit records.
@@ -117,7 +117,7 @@ class GxPReportCanvas(canvas.Canvas):
 
         self.setFont(FONT_NORMAL, 7.5)
         self.setFillColor(colors.HexColor("#6B7280"))
-        self.drawString(36, 30, "CONFIDENTIAL â€” Good Manufacturing Practice (GMP) Record â€” DeviationIQ QMS")
+        self.drawString(36, 30, "CONFIDENTIAL  -  Good Manufacturing Practice (GMP) Record  -  DeviationIQ QMS")
         page_str = f"Page {self._pageNumber} of {total_pages}"
         self.drawRightString(576, 30, page_str)
 
@@ -153,7 +153,7 @@ def _sanitize_gxp_text(text: Any) -> str:
     s = s.replace("\u2265", ">=")     # greater than or equal (â‰¥ -> >=)
     s = s.replace("\u00b1", "+/-")    # plus-minus (Â± -> +/-)
     s = s.replace("\u00b7", " - ")    # middle dot (Â· -> -)
-    s = s.replace("\u2026", "...")    # ellipsis (â€¦ -> ...)
+    s = s.replace("\u2026", "...")    # ellipsis (... -> ...)
 
     # 5. Replace arrows and bullets
     s = re.sub(r"[\u2192\u2794\u21d2]", "->", s)
@@ -170,10 +170,10 @@ def _sanitize_gxp_text(text: Any) -> str:
 def _escape_pdf(text: Any) -> str:
     """Safely escape text for ReportLab Paragraphs, sanitize glyphs, and preserve linebreaks."""
     if text is None:
-        return "â€”"
+        return " - "
     cleaned = _sanitize_gxp_text(text).strip()
     if not cleaned:
-        return "â€”"
+        return " - "
     escaped = html.escape(cleaned)
     return escaped.replace("\r\n", "<br/>").replace("\n", "<br/>")
 

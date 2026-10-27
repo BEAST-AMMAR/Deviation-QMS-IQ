@@ -55,6 +55,15 @@ export const authSlice = createSlice({
       state.isAuthenticated = false;
       localStorage.removeItem('deviationiq_token');
       localStorage.removeItem('deviationiq_user');
+      try {
+        Object.keys(sessionStorage).forEach((key) => {
+          if (key.startsWith('deviationiq_')) {
+            sessionStorage.removeItem(key);
+          }
+        });
+      } catch {
+        // Ignore in restricted browser environments
+      }
     },
   },
 });

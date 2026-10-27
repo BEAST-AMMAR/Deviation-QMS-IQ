@@ -254,3 +254,238 @@ async def test_data_subject_right_to_access_and_erasure(client: AsyncClient):
     me_after = await client.get("/api/auth/me", headers=headers)
     assert me_after.status_code == 401
     assert "deactivated" in me_after.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_user_pipeline_history_isolation(client: AsyncClient):
+    """
+    Verify complete multi-tenant pipeline history isolation:
+    User A sees only User A's deviations.
+    User B sees only User B's deviations.
+    No cross-user deviation exposure or data leakage occurs.
+    """
+    # 1. Register Alice
+    alice_reg = {
+        "username": "alice_qa",
+        "email": "alice@pharma-iq.internal",
+        "password": "AlicePassword2026!",
+        "full_name": "Alice QA Specialist",
+        "role": "quality_assurance",
+        "department": "Vaccine Formulation",
+        "terms_accepted": True,
+        "privacy_consent": True,
+    }
+    res_a = await client.post("/api/auth/register", json=alice_reg)
+    token_a = res_a.json()["access_token"]
+    headers_a = {"Authorization": f"Bearer {token_a}"}
+
+    # 2. Register Bob
+    bob_reg = {
+        "username": "bob_tech",
+        "email": "bob@pharma-iq.internal",
+        "password": "BobPassword2026!",
+        "full_name": "Bob Process Technician",
+        "role": "technician",
+        "department": "Packaging Line 2",
+        "terms_accepted": True,
+        "privacy_consent": True,
+    }
+    res_b = await client.post("/api/auth/register", json=bob_reg)
+    token_b = res_b.json()["access_token"]
+    headers_b = {"Authorization": f"Bearer {token_b}"}
+
+    # 3. Alice creates and commits a deviation
+    draft_a_res = await client.post("/api/drafts", headers=headers_a)
+    assert draft_a_res.status_code == 200
+    draft_a_id = draft_a_res.json()["draft_id"]
+
+    commit_a_payload = {
+        "site_plant": "Plant Alpha",
+        "date_of_occurrence": "2026-03-01",
+        "title": "Alice Autoclave Temperature Excursion",
+        "source": "SCADA Monitor",
+        "detailed_description": "Autoclave temperature dropped below 121C during hold cycle.",
+        "initial_impact": "Sterility assurance risk",
+        "initial_severity": "Critical",
+    }
+    commit_a_res = await client.post(f"/api/drafts/{draft_a_id}/commit", headers=headers_a, json=commit_a_payload)
+    assert commit_a_res.status_code == 200
+
+    # 4. Bob creates and commits a deviation
+    draft_b_res = await client.post("/api/drafts", headers=headers_b)
+    assert draft_b_res.status_code == 200
+    draft_b_id = draft_b_res.json()["draft_id"]
+
+    commit_b_payload = {
+        "site_plant": "Plant Beta",
+        "date_of_occurrence": "2026-03-02",
+        "title": "Bob Cartoner Sensor Jam",
+        "source": "Operator Log",
+        "detailed_description": "Packaging cartoner sensor misaligned causing carton jam.",
+        "initial_impact": "Physical packaging defect",
+        "initial_severity": "Minor",
+    }
+    commit_b_res = await client.post(f"/api/drafts/{draft_b_id}/commit", headers=headers_b, json=commit_b_payload)
+    assert commit_b_res.status_code == 200
+
+    # 5. Alice fetches pipeline history -> MUST only see Alice's deviation
+    list_a_res = await client.get("/api/deviations", headers=headers_a)
+    assert list_a_res.status_code == 200
+    devs_a = list_a_res.json()
+    assert len(devs_a) == 1
+    assert devs_a[0]["id"] == draft_a_id
+    assert devs_a[0]["title"] == "Alice Autoclave Temperature Excursion"
+
+    # 6. Bob fetches pipeline history -> MUST only see Bob's deviation
+    list_b_res = await client.get("/api/deviations", headers=headers_b)
+    assert list_b_res.status_code == 200
+    devs_b = list_b_res.json()
+    assert len(devs_b) == 1
+    assert devs_b[0]["id"] == draft_b_id
+    assert devs_b[0]["title"] == "Bob Cartoner Sensor Jam"
+
+
+@pytest.mark.asyncio
+async def test_cross_user_deviation_idor_protection(client: AsyncClient):
+    """
+    Verify Insecure Direct Object Reference (IDOR) attacks are completely blocked.
+    Bob cannot read, export, or audit Alice's committed deviation.
+    Unauthenticated users receive 401; unauthorized users receive 403 Forbidden.
+    """
+    # 1. Register Alice and create a committed deviation
+    alice_reg = {
+        "username": "alice_idor",
+        "email": "alice_idor@pharma.internal",
+        "password": "Password123!",
+        "full_name": "Alice IDOR Target",
+        "role": "quality_assurance",
+        "department": "QC Micro",
+        "terms_accepted": True,
+        "privacy_consent": True,
+    }
+    res_a = await client.post("/api/auth/register", json=alice_reg)
+    token_a = res_a.json()["access_token"]
+    headers_a = {"Authorization": f"Bearer {token_a}"}
+
+    draft_res = await client.post("/api/drafts", headers=headers_a)
+    alice_dev_id = draft_res.json()["draft_id"]
+
+    await client.post(
+        f"/api/drafts/{alice_dev_id}/commit",
+        headers=headers_a,
+        json={
+            "site_plant": "Micro Lab 4",
+            "date_of_occurrence": "2026-03-05",
+            "title": "Bioburden OOS in WFI Loop",
+            "source": "LIMS Sample",
+            "detailed_description": "Water for injection loop tested > 10 CFU/100ml.",
+            "initial_impact": "Utility contamination",
+            "initial_severity": "Major",
+        },
+    )
+
+    # 2. Register Bob (an unauthorized user)
+    bob_reg = {
+        "username": "bob_attacker",
+        "email": "bob_attacker@pharma.internal",
+        "password": "Password123!",
+        "full_name": "Bob Inquisitive",
+        "role": "technician",
+        "department": "Warehouse",
+        "terms_accepted": True,
+        "privacy_consent": True,
+    }
+    res_b = await client.post("/api/auth/register", json=bob_reg)
+    token_b = res_b.json()["access_token"]
+    headers_b = {"Authorization": f"Bearer {token_b}"}
+
+    # 3. Bob attempts direct lookups of Alice's deviation -> 403 Forbidden
+    res_dev = await client.get(f"/api/deviations/{alice_dev_id}", headers=headers_b)
+    assert res_dev.status_code == 403
+    assert "Access denied" in res_dev.json()["detail"]
+
+    # 4. Bob attempts to view session transcript -> 403 Forbidden
+    res_sess = await client.get(f"/api/deviations/{alice_dev_id}/session", headers=headers_b)
+    assert res_sess.status_code == 403
+
+    # 5. Bob attempts to view audit events -> 403 Forbidden
+    res_events = await client.get(f"/api/deviations/{alice_dev_id}/events", headers=headers_b)
+    assert res_events.status_code == 403
+
+    # 6. Bob attempts to export PDF dossier -> 403 Forbidden
+    res_pdf = await client.get(f"/api/deviations/{alice_dev_id}/export/pdf", headers=headers_b)
+    assert res_pdf.status_code == 403
+
+    # 7. Bob attempts to export DOCX dossier -> 403 Forbidden
+    res_docx = await client.get(f"/api/deviations/{alice_dev_id}/export/docx", headers=headers_b)
+    assert res_docx.status_code == 403
+
+    # 8. Unauthenticated client receives 401 Unauthorized
+    res_unauth = await client.get(f"/api/deviations/{alice_dev_id}")
+    assert res_unauth.status_code == 401
+
+    # 9. Alice (owner) has full authorized access -> 200 OK
+    res_owner = await client.get(f"/api/deviations/{alice_dev_id}", headers=headers_a)
+    assert res_owner.status_code == 200
+    assert res_owner.json()["title"] == "Bioburden OOS in WFI Loop"
+
+
+@pytest.mark.asyncio
+async def test_cross_user_draft_isolation_and_mutation_denial(client: AsyncClient):
+    """
+    Verify draft in-flight sessions cannot be read, patched, or reset by other users.
+    """
+    # 1. Register Carol and Dave
+    carol_reg = {
+        "username": "carol_draft",
+        "email": "carol@pharma.internal",
+        "password": "Password123!",
+        "full_name": "Carol Analyst",
+        "role": "technician",
+        "terms_accepted": True,
+        "privacy_consent": True,
+    }
+    res_c = await client.post("/api/auth/register", json=carol_reg)
+    headers_carol = {"Authorization": f"Bearer {res_c.json()['access_token']}"}
+
+    dave_reg = {
+        "username": "dave_draft",
+        "email": "dave@pharma.internal",
+        "password": "Password123!",
+        "full_name": "Dave Operator",
+        "role": "technician",
+        "terms_accepted": True,
+        "privacy_consent": True,
+    }
+    res_d = await client.post("/api/auth/register", json=dave_reg)
+    headers_dave = {"Authorization": f"Bearer {res_d.json()['access_token']}"}
+
+    # 2. Carol creates a draft
+    draft_res = await client.post("/api/drafts", headers=headers_carol)
+    carol_draft_id = draft_res.json()["draft_id"]
+
+    # 3. Dave tries to inspect Carol's draft -> 403
+    dave_get = await client.get(f"/api/drafts/{carol_draft_id}", headers=headers_dave)
+    assert dave_get.status_code == 403
+
+    # 4. Dave tries to patch fields on Carol's draft -> 403
+    dave_patch = await client.patch(
+        f"/api/drafts/{carol_draft_id}/fields",
+        headers=headers_dave,
+        json={"field_name": "site_plant", "value": "Malicious Plant"},
+    )
+    assert dave_patch.status_code == 403
+
+    # 5. Dave tries to reset/delete Carol's draft -> 403
+    dave_reset = await client.post(f"/api/drafts/{carol_draft_id}/reset", headers=headers_dave)
+    assert dave_reset.status_code == 403
+
+    # 6. Carol can read and update her draft without issue -> 200
+    carol_patch = await client.patch(
+        f"/api/drafts/{carol_draft_id}/fields",
+        headers=headers_carol,
+        json={"field_name": "site_plant", "value": "Authorized Cleanroom 1"},
+    )
+    assert carol_patch.status_code == 200
+    assert carol_patch.json()["site_plant"]["value"] == "Authorized Cleanroom 1"
+

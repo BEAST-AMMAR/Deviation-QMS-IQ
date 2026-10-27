@@ -1,5 +1,5 @@
 """
-DeviationIQ â€” LangGraph Node Implementations
+DeviationIQ  -  LangGraph Node Implementations
 
 Each node corresponds to a step in the deviation intake state machine.
 See TDD Â§4 for the full node design table.
@@ -130,7 +130,7 @@ def _parse_json_response(text: str) -> dict:
 def router_node(state: DraftState) -> dict:
     """
     Classify user intent: extract, correct, or chitchat.
-    Uses the small/fast model â€” TDD Â§4 decision for cost/latency.
+    Uses the small/fast model  -  TDD Â§4 decision for cost/latency.
     """
     # Direct routing for document uploads
     if state.get("input_type") == "file":
@@ -180,7 +180,7 @@ def router_node(state: DraftState) -> dict:
 def extractor_node(state: DraftState) -> dict:
     """
     Extract structured deviation fields from raw text.
-    Uses the large model. Returns null for unknown fields â€” NFR-03.
+    Uses the large model. Returns null for unknown fields  -  NFR-03.
     """
     llm = _get_llm_large()
     raw_input = state.get("raw_input", "")
@@ -345,7 +345,7 @@ def risk_assessor_node(state: DraftState) -> dict:
 def patch_node(state: DraftState) -> dict:
     """
     Apply natural-language corrections to specific fields.
-    Only updates fields mentioned in the correction â€” TDD Â§4.
+    Only updates fields mentioned in the correction  -  TDD Â§4.
     """
     llm = _get_llm_large()
     raw_input = state.get("raw_input", "")
@@ -442,8 +442,8 @@ def chitchat_node(state: DraftState) -> dict:
     return {
         "chat_reply": (
             "I can help you with:\n\n"
-            "  Extract â€” Paste incident report text or upload a document and I'll extract structured deviation fields automatically.\n\n"
-            "  Correct â€” Tell me which field to change and the new value, e.g. 'change the batch number to BT-2025-041'.\n\n"
+            "  Extract  -  Paste incident report text or upload a document and I'll extract structured deviation fields automatically.\n\n"
+            "  Correct  -  Tell me which field to change and the new value, e.g. 'change the batch number to BT-2025-041'.\n\n"
             "Paste or upload an incident report to get started."
         ),
         "changed_fields": [],

@@ -1,15 +1,17 @@
 """
-DeviationIQ â€” Drafts Router
+DeviationIQ — Drafts Router
 
 Handles the draft lifecycle:
-  POST /drafts             â†’ create new draft
-  GET  /drafts/{id}        â†’ fetch current draft state
-  POST /drafts/{id}/message â†’ send text/correction to AI graph
-  POST /drafts/{id}/upload  â†’ upload document for extraction
-  POST /drafts/{id}/confirm â†’ human confirmation of risk assessment
-  POST /drafts/{id}/reset   â†’ discard draft
+  POST /drafts             -> create new draft
+  GET  /drafts/{id}        -> fetch current draft state
+  POST /drafts/{id}/message -> send text/correction to AI graph
+  POST /drafts/{id}/upload  -> upload document for extraction
+  POST /drafts/{id}/confirm -> human confirmation of risk assessment
+  PATCH /drafts/{id}/fields -> manual field updates
+  POST /drafts/{id}/commit  -> direct form submission & commitment
+  POST /drafts/{id}/reset   -> discard draft
 
-Endpoints match TDD Â§5 exactly.
+Enforces multi-tenant user data isolation and strict IDOR defenses.
 """
 
 from __future__ import annotations
@@ -20,7 +22,7 @@ import uuid
 from datetime import date, datetime, timezone
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -49,8 +51,8 @@ from app.services.document_parser import parse_document
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/drafts", tags=["drafts"])
 
-# In-memory draft state store (per-session; in production use Redis or DB)
-# Keyed by draft_id â†’ {fields, messages, status, pending_assessment}
+# In-memory draft state store (per-session)
+# Keyed by draft_id -> {fields, messages, status, pending_assessment, user_id, deviation_db_id}
 _draft_store: dict[str, dict] = {}
 
 
@@ -123,7 +125,7 @@ def _finalize_deviation_session(deviation: Deviation, draft: dict):
     if deviation.ai_reasoning:
         summary_parts.append(f"AI Reasoning: {deviation.ai_reasoning[:120]}...")
     summary_parts.append(f"Signed off by {deviation.reviewed_by or 'Quality Officer'}")
-    deviation.session_summary = " Â· ".join(summary_parts)
+    deviation.session_summary = " · ".join(summary_parts)
 
 
 def _hydrate_draft_from_db(draft: dict, deviation: Deviation):
@@ -162,6 +164,9 @@ def _hydrate_draft_from_db(draft: dict, deviation: Deviation):
         except Exception:
             pass
 
+    if deviation.user_id and not draft.get("user_id"):
+        draft["user_id"] = str(deviation.user_id)
+
     if deviation.status == "committed":
         draft["status"] = "committed"
     elif deviation.ai_suggested_severity and not draft.get("pending_assessment"):
@@ -182,8 +187,66 @@ def _get_draft(draft_id: str) -> dict:
             "status": "pending_triage",
             "pending_assessment": None,
             "deviation_db_id": None,
+            "user_id": None,
         }
     return _draft_store[draft_id]
+
+
+async def _verify_draft_access(
+    draft_id: str,
+    db: AsyncSession,
+    current_user: Optional[User],
+) -> tuple[dict, Optional[Deviation]]:
+    """
+    Enforces strict user isolation and IDOR protection on drafts.
+    Blocks unauthorized cross-user reads and mutations with HTTP 403 / 401.
+    """
+    try:
+        dev_uuid = uuid.UUID(draft_id)
+    except (ValueError, TypeError):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid draft ID format.",
+        )
+
+    stmt = select(Deviation).where(Deviation.id == dev_uuid)
+    result_db = await db.execute(stmt)
+    deviation = result_db.scalar_one_or_none()
+
+    draft = _get_draft(draft_id)
+
+    if deviation:
+        _hydrate_draft_from_db(draft, deviation)
+        # Check database ownership
+        if deviation.user_id is not None:
+            if not current_user:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Authentication required to access this clinical deviation draft.",
+                )
+            if current_user.id != deviation.user_id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied: You do not have permission to access deviations belonging to another clinical account.",
+                )
+        elif current_user:
+            # Bind unassigned draft to the current user
+            deviation.user_id = current_user.id
+            draft["user_id"] = str(current_user.id)
+    elif draft.get("user_id"):
+        # Memory-only draft ownership check
+        if not current_user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required to access this clinical deviation draft.",
+            )
+        if str(current_user.id) != str(draft["user_id"]):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: You do not have permission to access deviations belonging to another clinical account.",
+            )
+
+    return draft, deviation
 
 
 def _fields_to_response(fields: dict) -> DraftFieldsResponse:
@@ -212,16 +275,24 @@ def _fields_to_response(fields: dict) -> DraftFieldsResponse:
 
 
 # ---------------------------------------------------------------------------
-# POST /drafts â€” Create new draft
+# POST /drafts -> Create new draft
 # ---------------------------------------------------------------------------
 
 @router.post("", response_model=DraftCreateResponse)
-async def create_draft(db: AsyncSession = Depends(get_db)):
-    """Create a new deviation draft and its database record."""
+async def create_draft(
+    current_user: Optional[User] = Depends(get_optional_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a new deviation draft and its database record, tied to current user."""
     draft_id = str(uuid.uuid4())
+    user_id = current_user.id if current_user else None
 
     # Create DB record
-    deviation = Deviation(id=uuid.UUID(draft_id), status="draft")
+    deviation = Deviation(
+        id=uuid.UUID(draft_id),
+        status="draft",
+        user_id=user_id,
+    )
     db.add(deviation)
     await db.flush()
 
@@ -234,31 +305,25 @@ async def create_draft(db: AsyncSession = Depends(get_db)):
         "status": "pending_triage",
         "pending_assessment": None,
         "deviation_db_id": draft_id,
+        "user_id": str(user_id) if user_id else None,
     }
 
-    logger.info("Created draft %s", draft_id)
+    logger.info("Created draft %s (user: %s)", draft_id, user_id)
     return DraftCreateResponse(draft_id=draft_id)
 
 
 # ---------------------------------------------------------------------------
-# GET /drafts/{id} â€” Fetch current draft state
+# GET /drafts/{id} -> Fetch current draft state
 # ---------------------------------------------------------------------------
 
 @router.get("/{draft_id}", response_model=DraftResponse)
-async def get_draft(draft_id: str, db: AsyncSession = Depends(get_db)):
-    """Return the current state of a draft, hydrating from DB if needed."""
-    draft = _get_draft(draft_id)
-
-    try:
-        dev_uuid = uuid.UUID(draft_id)
-        stmt = select(Deviation).where(Deviation.id == dev_uuid)
-        result_db = await db.execute(stmt)
-        deviation = result_db.scalar_one_or_none()
-        if deviation:
-            _hydrate_draft_from_db(draft, deviation)
-    except (ValueError, TypeError):
-        pass
-
+async def get_draft(
+    draft_id: str,
+    current_user: Optional[User] = Depends(get_optional_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return the current state of a draft, enforcing user isolation."""
+    draft, _ = await _verify_draft_access(draft_id, db, current_user)
     current_status = DeviationStatus.COMMITTED if draft.get("status") == "committed" else DeviationStatus.DRAFT
 
     return DraftResponse(
@@ -271,20 +336,21 @@ async def get_draft(draft_id: str, db: AsyncSession = Depends(get_db)):
 
 
 # ---------------------------------------------------------------------------
-# POST /drafts/{id}/message â€” Send text or correction
+# POST /drafts/{id}/message -> Send text or correction
 # ---------------------------------------------------------------------------
 
 @router.post("/{draft_id}/message", response_model=MessageResponse)
 async def send_message(
     draft_id: str,
     request: MessageRequest,
+    current_user: Optional[User] = Depends(get_optional_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """
     Process a user message through the LangGraph AI pipeline.
     Routes to extraction, correction, or chitchat based on intent.
     """
-    draft = _get_draft(draft_id)
+    draft, deviation = await _verify_draft_access(draft_id, db, current_user)
     text = request.text.strip()
 
     if not text:
@@ -334,6 +400,7 @@ async def send_message(
     changed_fields = result.get("changed_fields", [])
 
     # Log audit events for changed fields
+    user_uuid = current_user.id if current_user else (deviation.user_id if deviation else None)
     if changed_fields:
         try:
             deviation_id = uuid.UUID(draft_id)
@@ -344,6 +411,7 @@ async def send_message(
                 old_fields=old_fields,
                 new_fields=draft["fields"],
                 actor=actor,
+                user_id=user_uuid,
             )
         except Exception as e:
             logger.warning("Audit logging failed for draft %s: %s", draft_id, e)
@@ -370,14 +438,13 @@ async def send_message(
 
     # Update deviation DB record with current field values and chat history
     try:
-        stmt = select(Deviation).where(Deviation.id == uuid.UUID(draft_id))
-        result_db = await db.execute(stmt)
-        deviation = result_db.scalar_one_or_none()
         if deviation:
             _apply_fields_to_deviation(deviation, draft["fields"])
             deviation.chat_history = json.dumps(draft["messages"])
             if draft.get("filename"):
                 deviation.filename = draft["filename"]
+            if current_user and not deviation.user_id:
+                deviation.user_id = current_user.id
             await db.flush()
     except Exception as e:
         logger.warning("DB field update failed for draft %s: %s", draft_id, e)
@@ -392,20 +459,21 @@ async def send_message(
 
 
 # ---------------------------------------------------------------------------
-# POST /drafts/{id}/upload â€” Upload document for extraction
+# POST /drafts/{id}/upload -> Upload document for extraction
 # ---------------------------------------------------------------------------
 
 @router.post("/{draft_id}/upload", response_model=MessageResponse)
 async def upload_document(
     draft_id: str,
     file: UploadFile = File(...),
+    current_user: Optional[User] = Depends(get_optional_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """
     Upload a PDF/DOCX/TXT file, parse it, and run extraction.
-    Same extractor prompt as text input â€” single code path (SAD Â§4).
+    Enforces user isolation and records audit attribution.
     """
-    draft = _get_draft(draft_id)
+    draft, deviation = await _verify_draft_access(draft_id, db, current_user)
     draft["filename"] = file.filename or "upload"
 
     # Read and parse the file
@@ -475,6 +543,7 @@ async def upload_document(
     changed_fields = result.get("changed_fields", [])
 
     # Log audit events
+    user_uuid = current_user.id if current_user else (deviation.user_id if deviation else None)
     if changed_fields:
         try:
             await log_extraction_changes(
@@ -483,6 +552,7 @@ async def upload_document(
                 old_fields=old_fields,
                 new_fields=draft["fields"],
                 actor="ai",
+                user_id=user_uuid,
             )
         except Exception as e:
             logger.warning("Audit logging failed: %s", e)
@@ -495,13 +565,12 @@ async def upload_document(
 
     # Update DB record with fields, filename, and chat history
     try:
-        stmt = select(Deviation).where(Deviation.id == uuid.UUID(draft_id))
-        result_db = await db.execute(stmt)
-        deviation = result_db.scalar_one_or_none()
         if deviation:
             _apply_fields_to_deviation(deviation, draft["fields"])
             deviation.filename = draft["filename"]
             deviation.chat_history = json.dumps(draft["messages"])
+            if current_user and not deviation.user_id:
+                deviation.user_id = current_user.id
             await db.flush()
     except Exception as e:
         logger.warning("DB update failed: %s", e)
@@ -516,27 +585,22 @@ async def upload_document(
 
 
 # ---------------------------------------------------------------------------
-# POST /drafts/{id}/confirm â€” Human confirmation of risk assessment
+# POST /drafts/{id}/confirm -> Human confirmation of risk assessment
 # ---------------------------------------------------------------------------
 
 @router.post("/{draft_id}/confirm", response_model=ConfirmResponse)
 async def confirm_assessment(
     draft_id: str,
     request: ConfirmRequest,
-    db: AsyncSession = Depends(get_db),
     current_user: Optional[User] = Depends(get_optional_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Resume past the human confirmation gate.
     Commits the deviation record with the confirmed/edited assessment.
     This is the API surface of the LangGraph interrupt() — SAD §4.
     """
-    draft = _get_draft(draft_id)
-
-    # Fetch DB record
-    stmt = select(Deviation).where(Deviation.id == uuid.UUID(draft_id))
-    result_db = await db.execute(stmt)
-    deviation = result_db.scalar_one_or_none()
+    draft, deviation = await _verify_draft_access(draft_id, db, current_user)
 
     if not deviation:
         raise HTTPException(status_code=404, detail="Draft not found.")
@@ -553,6 +617,7 @@ async def confirm_assessment(
     deviation.ai_suggested_severity = pending.get("suggested_severity", "")
     deviation.ai_suggested_action = request.suggested_impact
     deviation.ai_reasoning = request.reasoning
+
     if current_user:
         deviation.user_id = current_user.id
         deviation.reviewed_by_user_id = current_user.id
@@ -583,8 +648,9 @@ async def confirm_assessment(
     _apply_fields_to_deviation(deviation, draft["fields"])
     _finalize_deviation_session(deviation, draft)
 
+    user_uuid = current_user.id if current_user else deviation.user_id
 
-    # Log the confirmation event
+    # Log the confirmation events
     await log_field_change(
         db=db,
         deviation_id=uuid.UUID(draft_id),
@@ -592,6 +658,7 @@ async def confirm_assessment(
         field="initial_severity",
         old_value=pending.get("suggested_severity"),
         new_value=request.suggested_severity.value,
+        user_id=user_uuid,
     )
     await log_field_change(
         db=db,
@@ -600,6 +667,7 @@ async def confirm_assessment(
         field="status",
         old_value="draft",
         new_value="committed",
+        user_id=user_uuid,
     )
 
     # Update draft store
@@ -620,13 +688,14 @@ async def confirm_assessment(
 
 
 # ---------------------------------------------------------------------------
-# PATCH /drafts/{id}/fields â€” Direct manual field synchronization
+# PATCH /drafts/{id}/fields -> Direct manual field synchronization
 # ---------------------------------------------------------------------------
 
 @router.patch("/{draft_id}/fields", response_model=DraftFieldsResponse)
 async def update_draft_fields(
     draft_id: str,
     request: DraftFieldUpdateRequest,
+    current_user: Optional[User] = Depends(get_optional_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -634,8 +703,8 @@ async def update_draft_fields(
     Persists edits directly into _draft_store and database,
     and logs actor="human" audit trail events (21 CFR Part 11).
     """
-    draft = _get_draft(draft_id)
-    if draft.get("status") == "committed":
+    draft, deviation = await _verify_draft_access(draft_id, db, current_user)
+    if draft.get("status") == "committed" or (deviation and deviation.status == "committed"):
         raise HTTPException(
             status_code=409,
             detail="This deviation is already committed and cannot be modified (SC-07).",
@@ -665,6 +734,8 @@ async def update_draft_fields(
         if f_val != old_val:
             changed_fields.append(f_name)
 
+    user_uuid = current_user.id if current_user else (deviation.user_id if deviation else None)
+
     # Log audit events for changed fields
     if changed_fields:
         try:
@@ -679,17 +750,17 @@ async def update_draft_fields(
                     field=f_name,
                     old_value=str(old_val) if old_val is not None else None,
                     new_value=str(new_val) if new_val is not None else None,
+                    user_id=user_uuid,
                 )
         except Exception as e:
             logger.warning("Audit logging failed for field update on draft %s: %s", draft_id, e)
 
     # Update DB record
     try:
-        stmt = select(Deviation).where(Deviation.id == uuid.UUID(draft_id))
-        result_db = await db.execute(stmt)
-        deviation = result_db.scalar_one_or_none()
         if deviation:
             _apply_fields_to_deviation(deviation, draft["fields"])
+            if current_user and not deviation.user_id:
+                deviation.user_id = current_user.id
             await db.flush()
     except Exception as e:
         logger.warning("DB update failed for draft %s: %s", draft_id, e)
@@ -698,27 +769,22 @@ async def update_draft_fields(
 
 
 # ---------------------------------------------------------------------------
-# POST /drafts/{id}/commit â€” Direct Form Submission & Commitment
+# POST /drafts/{id}/commit -> Direct Form Submission & Commitment
 # ---------------------------------------------------------------------------
 
 @router.post("/{draft_id}/commit", response_model=ConfirmResponse)
 async def commit_deviation_direct(
     draft_id: str,
     request: DirectCommitRequest,
-    db: AsyncSession = Depends(get_db),
     current_user: Optional[User] = Depends(get_optional_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Direct submission and commitment of deviation form.
     Allows operator to commit the deviation when manually filled or verified,
-    enforcing mandatory fields and recording audit trail (21 CFR Part 11).
+    enforcing mandatory fields, user ownership, and audit trail.
     """
-    draft = _get_draft(draft_id)
-
-    # Fetch DB record
-    stmt = select(Deviation).where(Deviation.id == uuid.UUID(draft_id))
-    result_db = await db.execute(stmt)
-    deviation = result_db.scalar_one_or_none()
+    draft, deviation = await _verify_draft_access(draft_id, db, current_user)
 
     if not deviation:
         raise HTTPException(status_code=404, detail="Draft not found.")
@@ -772,7 +838,6 @@ async def commit_deviation_direct(
     _apply_fields_to_deviation(deviation, draft["fields"])
     _finalize_deviation_session(deviation, draft)
 
-
     if current_user:
         deviation.user_id = current_user.id
         deviation.reviewed_by_user_id = current_user.id
@@ -783,6 +848,8 @@ async def commit_deviation_direct(
     deviation.status = "committed"
     deviation.committed_at = datetime.now(timezone.utc)
 
+    user_uuid = current_user.id if current_user else deviation.user_id
+
     # Log audit event
     await log_field_change(
         db=db,
@@ -791,6 +858,7 @@ async def commit_deviation_direct(
         field="status",
         old_value="draft",
         new_value="committed",
+        user_id=user_uuid,
     )
 
     # Update draft store
@@ -810,24 +878,27 @@ async def commit_deviation_direct(
     )
 
 
-
 # ---------------------------------------------------------------------------
-# POST /drafts/{id}/reset â€” Discard draft
+# POST /drafts/{id}/reset -> Discard draft
 # ---------------------------------------------------------------------------
 
 @router.post("/{draft_id}/reset", response_model=ResetResponse)
-async def reset_draft(draft_id: str, db: AsyncSession = Depends(get_db)):
-    """Reset a draft, clearing all fields and chat history."""
+async def reset_draft(
+    draft_id: str,
+    current_user: Optional[User] = Depends(get_optional_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Reset a draft, clearing all fields and chat history with authorization check."""
+    draft, deviation = await _verify_draft_access(draft_id, db, current_user)
+
     if draft_id in _draft_store:
         del _draft_store[draft_id]
 
     # Delete DB record if it exists and is still a draft
     try:
-        stmt = select(Deviation).where(Deviation.id == uuid.UUID(draft_id))
-        result_db = await db.execute(stmt)
-        deviation = result_db.scalar_one_or_none()
         if deviation and deviation.status == "draft":
             await db.delete(deviation)
+            await db.flush()
     except Exception as e:
         logger.warning("Draft DB cleanup failed: %s", e)
 

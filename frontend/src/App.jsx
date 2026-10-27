@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useCreateDraftMutation } from './store/apiSlice';
-import { setDraftId, setFieldsFromResponse } from './store/draftSlice';
+import { resetDraft, setDraftId, setFieldsFromResponse } from './store/draftSlice';
 import { addMessage, clearMessages } from './store/chatSlice';
 import Navbar from './components/Navbar';
 import DeviationFormPanel from './components/DeviationFormPanel';
@@ -16,6 +16,7 @@ function App() {
   const dispatch = useDispatch();
   const isAuthenticated = useSelector((state) => state.auth.isAuthenticated);
   const token = useSelector((state) => state.auth.token);
+  const user = useSelector((state) => state.auth.user);
   const draftId = useSelector((state) => state.draft.draftId);
   const [createDraft] = useCreateDraftMutation();
   const [showAudit, setShowAudit] = useState(false);
@@ -26,12 +27,23 @@ function App() {
   const [showLegalModal, setShowLegalModal] = useState(false);
   const [legalTab, setLegalTab] = useState('privacy');
 
+  // Key active draft storage strictly per user to ensure complete multi-tenant data isolation
+  const userDraftKey = user?.id ? `deviationiq_active_draft_${user.id}` : 'deviationiq_active_draft_guest';
+
+  // Clear in-memory draft whenever authentication state or user identity changes
+  useEffect(() => {
+    if (!isAuthenticated) {
+      dispatch(resetDraft());
+      dispatch(clearMessages());
+    }
+  }, [isAuthenticated, user?.id, dispatch]);
+
   // Auto-create or resume in-progress draft on mount (survives page refresh - NFR-02)
   useEffect(() => {
     if (!isAuthenticated) return;
 
     if (!draftId) {
-      const savedId = sessionStorage.getItem('deviationiq_active_draft_id');
+      const savedId = sessionStorage.getItem(userDraftKey);
       const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
 
       if (savedId) {
@@ -42,7 +54,7 @@ function App() {
           })
           .then((data) => {
             if (data.status === 'committed') {
-              sessionStorage.removeItem('deviationiq_active_draft_id');
+              sessionStorage.removeItem(userDraftKey);
               throw new Error('Already committed');
             }
             dispatch(setDraftId(savedId));
@@ -62,7 +74,7 @@ function App() {
             createDraft()
               .unwrap()
               .then((res) => {
-                sessionStorage.setItem('deviationiq_active_draft_id', res.draft_id);
+                sessionStorage.setItem(userDraftKey, res.draft_id);
                 dispatch(setDraftId(res.draft_id));
               })
               .catch((err) => {
@@ -73,7 +85,7 @@ function App() {
         createDraft()
           .unwrap()
           .then((res) => {
-            sessionStorage.setItem('deviationiq_active_draft_id', res.draft_id);
+            sessionStorage.setItem(userDraftKey, res.draft_id);
             dispatch(setDraftId(res.draft_id));
           })
           .catch((err) => {
@@ -81,7 +93,7 @@ function App() {
           });
       }
     }
-  }, [isAuthenticated, draftId, createDraft, dispatch, token]);
+  }, [isAuthenticated, draftId, createDraft, dispatch, token, userDraftKey]);
 
   // If not authenticated, present the secure 21 CFR Part 11 Login Screen
   if (!isAuthenticated) {

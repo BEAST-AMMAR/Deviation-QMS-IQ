@@ -1,7 +1,9 @@
 import { useDispatch, useSelector } from 'react-redux';
 import { Building2, ChevronRight, History, LogOut, ShieldCheck, User } from 'lucide-react';
-import { useListDeviationsQuery } from '../store/apiSlice';
+import { apiSlice, useListDeviationsQuery } from '../store/apiSlice';
 import { logout } from '../store/authSlice';
+import { resetDraft } from '../store/draftSlice';
+import { clearMessages } from '../store/chatSlice';
 
 export default function Navbar({ onOpenHistory }) {
   const dispatch = useDispatch();
@@ -30,6 +32,9 @@ export default function Navbar({ onOpenHistory }) {
 
   const handleSignOut = () => {
     dispatch(logout());
+    dispatch(resetDraft());
+    dispatch(clearMessages());
+    dispatch(apiSlice.util.resetApiState());
   };
 
   return (

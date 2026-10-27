@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.database import get_db
 from app.main import app
+from app.middleware.traffic import rate_limiter
 from app.models import Base
 from app.services.security import seed_default_users
 
@@ -36,6 +37,14 @@ TestSessionLocal = async_sessionmaker(
     class_=AsyncSession,
     expire_on_commit=False,
 )
+
+
+@pytest.fixture(autouse=True)
+def reset_rate_limiter_fixture():
+    """Clear in-memory rate limiter history before each test to ensure test isolation."""
+    rate_limiter._history.clear()
+    yield
+    rate_limiter._history.clear()
 
 
 @pytest_asyncio.fixture(scope="session", autouse=True)

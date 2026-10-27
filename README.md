@@ -7,30 +7,30 @@
 [![21 CFR Part 11](https://img.shields.io/badge/Compliance-FDA%2021%20CFR%20Part%2011-success.svg)](https://www.fda.gov/)
 [![DPDP Act 2023](https://img.shields.io/badge/Compliance-India%20DPDP%20Act%202023-blue.svg)](backend/app/routers/compliance.py)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-yellowgreen.svg)](LICENSE)
-[![Tests: 43 Passing](https://img.shields.io/badge/tests-43%20passing-brightgreen.svg)](backend/tests/)
+[![Tests: 43+ Passing](https://img.shields.io/badge/tests-43%2B%20passing-brightgreen.svg)](backend/tests/)
 
 An enterprise, pharmaceutical-grade Deviation Intake Module engineered in strict compliance with **FDA 21 CFR Part 11**, **ICH Q9/Q10**, and **GAMP 5** standards. The system accelerates deviation intake and incident triage while enforcing human-in-the-loop oversight, zero-hallucination guardrails, and immutable audit trails.
 
 ---
 
-## 🏛️ Architecture Overview
+## Architecture Overview
 
 The system implements a decoupled, three-tier contract-first architecture powered by an asynchronous LangGraph state machine:
 
 ```mermaid
 flowchart TD
     subgraph Client["Presentation Tier (Client)"]
-        UI["DeviationIQ Web Client<br/>React 19 • Vite • Redux Toolkit<br/>Pharma Clinical Design System"]
+        UI["DeviationIQ Web Client<br/>React 19 &bull; Vite &bull; Redux Toolkit<br/>Pharma Clinical Design System"]
     end
 
     subgraph AppTier["Application & Orchestration Tier"]
-        API["FastAPI Gateway & Endpoints<br/>• /api/drafts: In-memory session & intake triage<br/>• /api/deviations: Read-only committed records & audit log<br/>• /api/deviations/{id}/export/pdf & docx: Dossier exports<br/>• SecurityHeadersMiddleware (HSTS, nosniff, frame denial)"]
+        API["FastAPI Gateway & Endpoints<br/>- /api/drafts: In-memory session & intake triage<br/>- /api/deviations: Read-only committed records & audit log<br/>- /api/deviations/{id}/export/pdf & docx: Dossier exports<br/>- SecurityHeadersMiddleware (HSTS, nosniff, frame denial)"]
         
-        LG["LangGraph Multi-Agent Orchestrator<br/>• Router Node (Intent Classification)<br/>• Extractor Node (Zero-Hallucination Extraction)<br/>• Risk Assessor Node (ICH Q9 Clinical Proposal)<br/>• Patch Node (Natural Language Field Corrections)<br/>• Human-in-the-Loop Confirmation Gate"]
+        LG["LangGraph Multi-Agent Orchestrator<br/>- Router Node (Intent Classification)<br/>- Extractor Node (Zero-Hallucination Extraction)<br/>- Risk Assessor Node (ICH Q9 Clinical Proposal)<br/>- Patch Node (Natural Language Field Corrections)<br/>- Human-in-the-Loop Confirmation Gate"]
     end
 
     subgraph DataTier["Persistence & Audit Tier"]
-        DB[("PostgreSQL 16 / SQLite<br/>• deviations (Immutable on commit)<br/>• deviation_events (ALCOA+ Audit Ledger)<br/>• ai_extraction_logs")]
+        DB[("PostgreSQL 16 / SQLite<br/>- deviations (Immutable on commit)<br/>- deviation_events (ALCOA+ Audit Ledger)<br/>- ai_extraction_logs<br/>- users & consent_records")]
     end
 
     Client <-->|HTTP / JSON REST RTK Query| API
@@ -40,50 +40,48 @@ flowchart TD
 
 ---
 
-## ✨ Key Features & Regulatory Compliance
+## Key Features & Regulatory Compliance
 
-1. **Human-in-the-Loop Confirmation Gate (21 CFR Part 11 / SAD §4)**:
+1. **Human-in-the-Loop Confirmation Gate (21 CFR Part 11 / SAD Section 4)**:
    - The AI risk assessor generates severity and impact proposals with clinical justification.
    - The system structurally **blocks** final deviation commitment until an authorized quality officer reviews, confirms, or modifies the assessment.
 
-2. **Append-Only Immutable Audit Trail (ALCOA+ / FRD §3)**:
+2. **Append-Only Immutable Audit Trail (ALCOA+ / FRD Section 3)**:
    - All state modifications are stored in the immutable `deviation_events` ledger with actor attribution (`ai` vs `human`), before/after diffs, confidence scores, and verbatim source snippets.
    - Once committed, deviations become **strictly read-only** at the API level (HTTP 409 Conflict on mutation attempts).
 
-3. **Field-Level Confidence & AI Provenance (UIUX §3)**:
+3. **Field-Level Confidence & AI Provenance (UIUX Section 3)**:
    - Visual highlighting of fields (`high`, `medium`, `low`) with expandable source snippet quotes.
    - Human manual overrides and natural language corrections cleanly transition field ownership from `ai` to `human`.
 
 4. **Multi-Modal Document Ingestion**:
    - Supports raw text pasting and multi-format document uploads (PDF, DOCX, TXT) processed through the same validated extraction pipeline.
 
-5. **Anti-Hallucination & Prompt Injection Defense (Security Plan §3)**:
+5. **Anti-Hallucination & Prompt Injection Defense (Security Plan Section 3)**:
    - System prompts enforce strict separation: user documents are treated purely as **untrusted data**, never executable instructions.
    - Null extraction constraint (FR-07): If information is not clearly present in the source text, the model returns `null` rather than fabricating values.
 
 6. **Publication-Grade GxP Dossier Exports**:
    - Automated server-side generation of high-precision GxP **PDF** and **DOCX** deviation dossiers complete with running headers, electronic signature blocks, and audit trail diffs.
 
-7. **Indian DPDP Act 2023 & IT Act 2000 Statutory Compliance**:
-   - **Section 5 Statutory Notice**: Clear legal disclosure of data items, processing purposes, and data fiduciary obligations.
-   - **Section 6 Affirmative Consent Ledger**: Unbundled, unchecked consent checkboxes at signup logged into a persistent, tamper-resistant consent table (`consent_records`).
-   - **Sections 11 & 12 Data Subject Rights**: Self-service data export (`/api/compliance/my-data`) and erasure workflows (`/api/compliance/erasure-request`) harmonized with CDSCO/21 CFR Part 11 immutable audit trail retentions.
-   - **Section 13 Grievance Redressal**: Published contact details and 30-day escalation SLA for the Data Protection Officer (DPO).
-   - **Essential Security Cookies**: Strictly essential session tokens; zero third-party commercial trackers or analytics beacons.
+7. **Multi-Tenant User Isolation & Data Protection**:
+   - **Zero Cross-User Data Leaks**: Every clinical user has their own private pipeline history and saved deviations.
+   - **IDOR Protections**: Direct deviation lookups, session transcripts, draft state, and dossier exports verify user ownership with `HTTP 403 Forbidden` on unauthorized access.
+   - **Indian DPDP Act 2023 & IT Act 2000 Statutory Compliance**: Section 5 notice, Section 6 affirmative consent records, Section 11/12 data subject export & erasure, and essential security cookies.
 
 ---
 
-## 📑 Documentation & Regulatory Reports
+## Documentation & Regulatory Reports
 
 All system specifications and publication-grade reports are organized under the [`docs/`](docs/README.md) directory:
 
-- 📊 **[Comprehensive Technical Project Report (PDF)](docs/reports/DeviationIQ_Technical_Report.pdf)**: 38-page publication-grade specification with vector Mermaid architecture diagrams, ER diagrams, data contracts, and verification matrices.
-- 🎙️ **[Pipeline Explainer Guide (PDF)](docs/reports/Pipeline_Explainer.pdf)**: 9-page two-way guide covering technical pointwise breakdowns and executive conversational pitch scripts.
-- 🏛️ **[Architectural & GxP Specification Suite](docs/architecture/)**: Complete 17-document specification package (BRD, PRD, SRS, SAD, Database ER, Security Plan, Test Plan, and QAP).
+- **[Comprehensive Technical Project Report (PDF)](docs/reports/DeviationIQ_Technical_Report.pdf)**: 38-page publication-grade specification with vector Mermaid architecture diagrams, ER diagrams, data contracts, and verification matrices.
+- **[Pipeline Explainer Guide (PDF)](docs/reports/Pipeline_Explainer.pdf)**: 9-page two-way guide covering technical pointwise breakdowns and executive conversational pitch scripts.
+- **[Architectural & GxP Specification Suite](docs/architecture/)**: Complete 17-document specification package (BRD, PRD, SRS, SAD, Database ER, Security Plan, Test Plan, and QAP).
 
 ---
 
-## 🚀 Quick Start (Development Mode)
+## Quick Start (Development Mode)
 
 To launch the development stack (PostgreSQL + FastAPI + React with hot-reloading):
 
@@ -105,7 +103,7 @@ docker compose up --build
 
 ---
 
-## 🏭 Production Enterprise Deployment
+## Production Enterprise Deployment
 
 The production stack deploys a multi-stage Nginx container serving optimized React static assets with reverse-proxy routing to a hardened, non-root FastAPI application:
 
@@ -124,7 +122,7 @@ docker compose -f docker-compose.prod.yml up -d --build
 
 ---
 
-## 💻 Local Development Setup (Without Docker)
+## Local Development Setup (Without Docker)
 
 ### Backend Setup
 
@@ -162,18 +160,18 @@ npm run build
 
 ---
 
-## 🧪 Testing & Quality Assurance
+## Testing & Quality Assurance
 
-### Run Backend Unit & Integration Tests (40 passing tests)
+### Run Backend Unit & Integration Tests
 
 ```bash
 cd backend
 python -m pytest tests -v
 ```
 
-### Run AI Evaluation Harness (Test Plan §3)
+### Run AI Evaluation Harness (Test Plan Section 3)
 
-The offline evaluation harness benchmarks field extraction accuracy, null-correctness, and prompt injection defense against 6 synthetic GxP incident fixtures:
+The offline evaluation harness benchmarks field extraction accuracy, null-correctness, and prompt injection defense against synthetic GxP incident fixtures:
 
 ```bash
 cd backend
@@ -186,63 +184,63 @@ python -m app.eval.run_eval
 
 ---
 
-## 📁 Repository Structure
+## Repository Structure
 
 ```
 Deviation-QMS-IQ/
-├── .github/                             # CI/CD Workflows & Repository Governance
-│   ├── workflows/ci.yml                 # Automated Pytest & Vite Build Actions
-│   ├── ISSUE_TEMPLATE/                  # Bug report & feature request templates
-│   └── pull_request_template.md         # GxP & 21 CFR Part 11 PR checklist
-├── .env.example                         # Environment configuration template
-├── .gitignore                           # Comprehensive Git exclusions
-├── docker-compose.yml                   # Development orchestration (hot-reload)
-├── docker-compose.prod.yml              # Production orchestration (Nginx + non-root API)
-├── LICENSE                              # Apache 2.0 License
-├── README.md                            # Project overview & quickstart (this file)
-├── SECURITY.md                          # Vulnerability reporting & GxP disclosures
-├── CONTRIBUTING.md                      # Development & review guidelines
-│
-├── docs/                                # Enterprise Documentation Suite
-│   ├── README.md                        # Master documentation index & reading guide
-│   ├── reports/                         # Publication-grade technical & executive dossiers
-│   │   ├── DeviationIQ_Technical_Report.pdf # 38-page technical project report
-│   │   └── Pipeline_Explainer.pdf       # 9-page two-way engineering & pitch guide
-│   └── architecture/                    # Formal GxP Specifications (01_BRD to 17_Demo)
-│
-├── backend/                             # Python 3.11+ FastAPI + LangGraph Service
-│   ├── app/
-│   │   ├── config.py                    # Pydantic BaseSettings
-│   │   ├── database.py                  # SQLAlchemy 2.0 Async Engine (Postgres / SQLite)
-│   │   ├── models.py                    # ORM Models (Deviation, Events, AI Logs)
-│   │   ├── schemas.py                   # Pydantic v2 schemas (Single source of truth)
-│   │   ├── reports.py                   # PDF & DOCX regulatory export generator
-│   │   ├── graph/                       # LangGraph StateGraph, Nodes & Prompts
-│   │   ├── routers/                     # /api/drafts & /api/deviations endpoints
-│   │   ├── services/                    # Audit logger & document parser
-│   │   └── eval/                        # AI evaluation harness & fixtures
-│   ├── tests/                           # Pytest suite (30 unit & integration tests)
-│   ├── requirements.txt
-│   ├── Dockerfile                       # Development Dockerfile
-│   └── Dockerfile.prod                  # Production hardened Dockerfile (non-root)
-│
-└── frontend/                            # React 19 + Redux Toolkit + Vite Web App
-    ├── src/
-    │   ├── components/                  # FormPanel, CopilotPanel, ConfirmationCard, Drawers
-    │   ├── store/                       # Redux store, apiSlice, draftSlice, chatSlice
-    │   ├── index.css                    # Pharmaceutical-grade design system
-    │   ├── App.jsx
-    │   └── main.jsx
-    ├── package.json
-    ├── vite.config.js
-    ├── nginx.conf                       # Production Nginx reverse-proxy & security config
-    ├── Dockerfile                       # Development Dockerfile
-    └── Dockerfile.prod                  # Multi-stage production Nginx Dockerfile
+|-- .github/                             # CI/CD Workflows & Repository Governance
+|   |-- workflows/ci.yml                 # Automated Pytest & Vite Build Actions
+|   |-- ISSUE_TEMPLATE/                  # Bug report & feature request templates
+|   \-- pull_request_template.md         # GxP & 21 CFR Part 11 PR checklist
+|-- .env.example                         # Environment configuration template
+|-- .gitignore                           # Comprehensive Git exclusions
+|-- docker-compose.yml                   # Development orchestration (hot-reload)
+|-- docker-compose.prod.yml              # Production orchestration (Nginx + non-root API)
+|-- LICENSE                              # Apache 2.0 License
+|-- README.md                            # Project overview & quickstart (this file)
+|-- SECURITY.md                          # Vulnerability reporting & GxP disclosures
+|-- CONTRIBUTING.md                      # Development & review guidelines
+|
+|-- docs/                                # Enterprise Documentation Suite
+|   |-- README.md                        # Master documentation index & reading guide
+|   |-- reports/                         # Publication-grade technical & executive dossiers
+|   |   |-- DeviationIQ_Technical_Report.pdf # 38-page technical project report
+|   |   \-- Pipeline_Explainer.pdf       # 9-page two-way engineering & pitch guide
+|   \-- architecture/                    # Formal GxP Specifications (01_BRD to 17_Demo)
+|
+|-- backend/                             # Python 3.11+ FastAPI + LangGraph Service
+|   |-- app/
+|   |   |-- config.py                    # Pydantic BaseSettings
+|   |   |-- database.py                  # SQLAlchemy 2.0 Async Engine (Postgres / SQLite)
+|   |   |-- models.py                    # ORM Models (Deviation, Events, AI Logs, Users)
+|   |   |-- schemas.py                   # Pydantic v2 schemas (Single source of truth)
+|   |   |-- reports.py                   # PDF & DOCX regulatory export generator
+|   |   |-- graph/                       # LangGraph StateGraph, Nodes & Prompts
+|   |   |-- routers/                     # /api/drafts & /api/deviations endpoints
+|   |   |-- services/                    # Audit logger & document parser
+|   |   \-- eval/                        # AI evaluation harness & fixtures
+|   |-- tests/                           # Pytest suite (43+ unit & integration tests)
+|   |-- requirements.txt
+|   |-- Dockerfile                       # Development Dockerfile
+|   \-- Dockerfile.prod                  # Production hardened Dockerfile (non-root)
+|
+\-- frontend/                            # React 19 + Redux Toolkit + Vite Web App
+    |-- src/
+    |   |-- components/                  # FormPanel, CopilotPanel, ConfirmationCard, Drawers
+    |   |-- store/                       # Redux store, apiSlice, draftSlice, chatSlice, authSlice
+    |   |-- index.css                    # Pharmaceutical-grade design system
+    |   |-- App.jsx
+    |   \-- main.jsx
+    |-- package.json
+    |-- vite.config.js
+    |-- nginx.conf                       # Production Nginx reverse-proxy & security config
+    |-- Dockerfile                       # Development Dockerfile
+    \-- Dockerfile.prod                  # Multi-stage production Nginx Dockerfile
 ```
 
 ---
 
-## ⚖️ License & Compliance Notice
+## License & Compliance Notice
 
 This project is licensed under the **Apache License 2.0**. See the [LICENSE](LICENSE) file for complete details.
 

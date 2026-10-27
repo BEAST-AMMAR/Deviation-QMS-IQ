@@ -31,11 +31,13 @@ async def log_field_change(
     new_value: Optional[str],
     confidence: Optional[str] = None,
     source_snippet: Optional[str] = None,
+    user_id: Optional[uuid.UUID] = None,
 ) -> DeviationEvent:
     """
     Record a single field change in the append-only audit trail.
     
     Called by both AI extraction (actor='ai') and human correction (actor='human').
+    Bound to the authenticated clinical user for strict multi-user non-repudiation.
     """
     event = DeviationEvent(
         deviation_id=deviation_id,
@@ -45,11 +47,12 @@ async def log_field_change(
         new_value=new_value,
         confidence=confidence,
         source_snippet=source_snippet,
+        user_id=user_id,
     )
     db.add(event)
     logger.info(
-        "Audit event: %s changed '%s' on %s: '%s' → '%s'",
-        actor, field, deviation_id, old_value, new_value,
+        "Audit event: %s changed '%s' on %s (user %s): '%s' -> '%s'",
+        actor, field, deviation_id, user_id, old_value, new_value,
     )
     return event
 
@@ -60,6 +63,7 @@ async def log_extraction_changes(
     old_fields: dict,
     new_fields: dict,
     actor: str = "ai",
+    user_id: Optional[uuid.UUID] = None,
 ) -> list[str]:
     """
     Compare old and new field dicts and log each change.
@@ -81,6 +85,7 @@ async def log_extraction_changes(
                 new_value=str(new_val),
                 confidence=new_data.get("confidence") if isinstance(new_data, dict) else None,
                 source_snippet=new_data.get("source_snippet") if isinstance(new_data, dict) else None,
+                user_id=user_id,
             )
             changed.append(field_name)
     return changed
