@@ -412,3 +412,4 @@ async def request_data_erasure(
         "requested_at": now.isoformat(),
         "dpo_escalation": "dpo-compliance@deviationiq.internal",
     }
+

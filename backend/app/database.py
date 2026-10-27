@@ -57,6 +57,31 @@ def configure_sqlite_pragmas(dbapi_connection, connection_record):
         pass
 
 
+def run_auto_migrations(sync_conn):
+    """
+    Safely inspects existing tables and applies ALTER TABLE ADD COLUMN
+    for any missing schema columns in SQLite.
+    Prevents schema mismatch crashes when models evolve without full database re-creation.
+    """
+    from app.models import Base
+
+    dialect_name = sync_conn.dialect.name
+    if dialect_name == "sqlite":
+        for table_name, table in Base.metadata.tables.items():
+            try:
+                res = sync_conn.execute(text(f"PRAGMA table_info({table_name})"))
+                existing_cols = {row[1] for row in res.fetchall()}
+                if not existing_cols:
+                    continue
+                for col in table.columns:
+                    if col.name not in existing_cols:
+                        type_str = col.type.compile(sync_conn.dialect)
+                        sync_conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {col.name} {type_str}"))
+                        logger.info("Auto-migrated table %s: added column %s (%s)", table_name, col.name, type_str)
+            except Exception as e:
+                logger.warning("Auto-migration check for table %s skipped: %s", table_name, e)
+
+
 async def init_sqlite_fallback():
     """Initializes local SQLite engine if PostgreSQL is unreachable."""
     global engine, async_session_factory
@@ -72,6 +97,7 @@ async def init_sqlite_fallback():
     )
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(run_auto_migrations)
     logger.info("SQLite database tables verified/created (deviationiq.db).")
 
     # Seed default clinical users

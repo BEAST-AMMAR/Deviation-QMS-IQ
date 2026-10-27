@@ -67,6 +67,8 @@ async def lifespan(app: FastAPI):
     try:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+            from app.database import run_auto_migrations
+            await conn.run_sync(run_auto_migrations)
         logger.info("Database schema validated via primary engine.")
         # Seed default users
         async with async_session_factory() as session:

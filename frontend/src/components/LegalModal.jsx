@@ -27,10 +27,10 @@ export default function LegalModal({ isOpen, onClose, initialTab = 'privacy' }) 
     }
   }, [initialTab]);
 
-  const { data: privacyData, isLoading: isPrivacyLoading } = useGetPrivacyPolicyQuery();
-  const { data: termsData, isLoading: isTermsLoading } = useGetTermsAndConditionsQuery();
-  const { data: cookieData, isLoading: isCookieLoading } = useGetCookiePolicyQuery();
-  const { data: dpoData, isLoading: isDpoLoading } = useGetDpoContactQuery();
+  const { data: privacyData, isLoading: isPrivacyLoading } = useGetPrivacyPolicyQuery(undefined, { skip: !isOpen });
+  const { data: termsData, isLoading: isTermsLoading } = useGetTermsAndConditionsQuery(undefined, { skip: !isOpen });
+  const { data: cookieData, isLoading: isCookieLoading } = useGetCookiePolicyQuery(undefined, { skip: !isOpen });
+  const { data: dpoData, isLoading: isDpoLoading } = useGetDpoContactQuery(undefined, { skip: !isOpen });
 
   if (!isOpen) return null;
 
@@ -374,3 +374,4 @@ export default function LegalModal({ isOpen, onClose, initialTab = 'privacy' }) 
     </div>
   );
 }
+
